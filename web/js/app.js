@@ -407,6 +407,12 @@ $('seg-mode').querySelectorAll('button').forEach(b =>
     browser.syncSegs(); browser.renderMatrix(); browser.renderLegend();
   }));
 
+$('combo-toggle').addEventListener('click', () => {
+  browser.comboRows = !browser.comboRows;
+  $('combo-toggle').classList.toggle('active', browser.comboRows);
+  browser.renderMatrix();
+});
+
 // restore last config if present
 try {
   const saved = JSON.parse(localStorage.getItem('freepio-last-spot') || 'null');

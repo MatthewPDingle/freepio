@@ -51,6 +51,7 @@ export class Browser {
     this.view = null;
     this.player = 0;     // matrix viewpoint
     this.mode = 'strategy';
+    this.comboRows = false; // STRAT: split cells into per-combo vertical columns
     this.selectedCell = null; // pinned by click
     this.hoverCell = null;    // transient mouse-over
     this.handsTab = 'hands';
@@ -710,7 +711,7 @@ export class Browser {
       if (hi === undefined || !this.handMatches(p, hi)) continue;
       const h = hands[hi];
       if (h.reach <= 1e-9) continue;
-      out.push({ reach: h.reach, ev: h.ev, eq: h.eq });
+      out.push({ reach: h.reach, ev: h.ev, eq: h.eq, strat: h.strategy });
     }
     return out;
   }
@@ -812,6 +813,8 @@ export class Browser {
         bars.innerHTML = '';
         bars.style.height = '';
         bars.style.alignItems = '';
+        bars.style.flexDirection = '';
+        bars.style.gap = '';
         fill.style.height = '0';
         cell.classList.toggle('empty', agg.present === 0 || agg.reach <= 1e-9);
         cell.classList.toggle('absent', agg.present === 0);
@@ -832,6 +835,25 @@ export class Browser {
           bars.style.opacity = show ? 1 : 0;
           bars.style.height = `${(f * 100).toFixed(1)}%`;
           sub.textContent = show ? `${Math.round(f * 100)}%` : '';
+        } else if (this.mode === 'strategy' && agg.strat && this.comboRows) {
+          // one vertical column per combo (cell chopped vertically): column
+          // height = its reach, split by that combo's action frequencies with
+          // the most aggressive actions (reds) at the bottom
+          const list = this.cellCombosData(i, j, p).filter(c => c.strat);
+          if (!list.length) { bars.style.opacity = 0; sub.textContent = ''; }
+          else {
+            bars.style.opacity = 1;
+            bars.style.height = '100%';
+            bars.style.alignItems = 'flex-end'; // bottom-anchor the columns
+            const w = (100 / list.length).toFixed(3);
+            bars.innerHTML = list.map(c => {
+              const colH = Math.min(1, c.reach / maxReach) * 100;
+              const segs = c.strat.map((s, k) =>
+                `<div style="height:${(s * 100).toFixed(2)}%;background:${colors[k]}"></div>`).join('');
+              return `<div style="width:${w}%;height:${colH.toFixed(1)}%;display:flex;flex-direction:column">${segs}</div>`;
+            }).join('');
+            sub.textContent = '';
+          }
         } else if (this.mode === 'strategy' && agg.strat) {
           agg.strat.forEach((s, k) => {
             const d = document.createElement('div');

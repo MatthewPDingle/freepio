@@ -387,6 +387,13 @@ textarea {
   padding: 6px 14px; cursor: pointer;
 }
 .seg button.active { background: var(--accent-soft); color: var(--accent); }
+.combo-toggle {
+  font-family: var(--font-disp); font-weight: 700; font-size: 11px; letter-spacing: .08em;
+  background: var(--bg2); border: 1px solid var(--line2); color: var(--ink-dim);
+  padding: 6px 12px; cursor: pointer; border-radius: 4px;
+}
+.combo-toggle:hover { color: var(--ink); }
+.combo-toggle.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
 .browse-grid { display: grid; grid-template-columns: minmax(560px, 1.4fr) minmax(360px, 1fr); gap: 8px; align-items: start; }
 .matrix-panel { padding: 7px; }
