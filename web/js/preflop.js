@@ -73,11 +73,12 @@ export function legalActions(state) {
   else out.push({ type: 'call', label: `Call ${fmtBb(toCall)}` });
   // Raise/3-bet/4-bet: only meaningful while >1 player can still be in.
   if (live > 1) {
-    const isOpen = toCall <= BB + 1e-9;             // no prior raise yet
+    const nRaises = state.line.filter(a => a.type === 'raise').length;
+    const isOpen = nRaises === 0;
     const suggest = isOpen
       ? roundBb(2.5)                                // default open 2.5bb
       : roundBb(toCall * 3);                        // default re-raise 3x
-    const label = isOpen ? 'Raise' : (toCall > BB * 3 ? '4-bet' : '3-bet');
+    const label = isOpen ? 'Raise' : `${nRaises + 2}-bet`;
     out.push({ type: 'raise', label, toBb: suggest });
   }
   return out;
@@ -96,7 +97,8 @@ export function derive(state) {
   const oop = POSTFLOP_RANK[a] < POSTFLOP_RANK[b] ? a : b;
   const ip = oop === a ? b : a;
   const pot = POSITIONS.reduce((s, p) => s + invested[p], 0);
-  const effStack = state.stackBb - toCall;          // both flop players invested toCall
+  // both flop players invested toCall, plus their ante
+  const effStack = state.stackBb - toCall - (state.ante || 0);
   return {
     ready: true, oop, ip, potBb: round1(pot), effStackBb: round1(effStack),
     investedBb: invested, line: state.line.slice(),

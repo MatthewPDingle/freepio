@@ -167,12 +167,14 @@ impl SpotRequest {
 // ---------------------------------------------------------------------------
 
 /// GPU solving: on when compiled with the `gpu` feature unless SOLVER_GPU=0.
+#[cfg(feature = "gpu")]
 fn gpu_enabled() -> bool {
-    cfg!(feature = "gpu") && std::env::var("SOLVER_GPU").as_deref() != Ok("0")
+    std::env::var("SOLVER_GPU").as_deref() != Ok("0")
 }
 
 /// Safety headroom (MB) kept free on top of the VRAM estimate, for the CUDA
 /// context, plan arrays and lock tables not counted in the estimate.
+#[cfg(feature = "gpu")]
 const GPU_MARGIN_MB: u64 = 512;
 
 /// Effective GPU memory budget (MB) and whether the GPU is usable for this run.
@@ -211,6 +213,29 @@ fn tree_info(spot: &Spot, arena_mb: f64) -> TreeInfo {
     }
 }
 
+/// Solver-arena RAM cap (MB): SOLVER_MEM_MB override, else 80% of currently
+/// available system memory (never above 48 GB), so a laptop refuses a spot
+/// sized for a workstation instead of thrashing into OOM.
+fn mem_cap_mb() -> f64 {
+    if let Some(v) = std::env::var("SOLVER_MEM_MB")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        return v;
+    }
+    let avail_mb = std::fs::read_to_string("/proc/meminfo").ok().and_then(|s| {
+        s.lines()
+            .find(|l| l.starts_with("MemAvailable:"))
+            .and_then(|l| l.split_whitespace().nth(1))
+            .and_then(|kb| kb.parse::<f64>().ok())
+            .map(|kb| kb / 1024.0)
+    });
+    match avail_mb {
+        Some(a) => (a * 0.8).min(48_000.0),
+        None => 48_000.0, // no /proc/meminfo (non-Linux): keep the old cap
+    }
+}
+
 /// Arena storage for new/loaded solves: compressed unless SOLVER_COMPRESS=0.
 fn storage_from_env() -> Storage {
     match std::env::var("SOLVER_COMPRESS").as_deref() {
@@ -238,9 +263,11 @@ async fn build_spot(
 
     let storage = storage_from_env();
     let arena_mb = spot.arena_bytes_for(storage) as f64 / 1e6;
-    if arena_mb > 48_000.0 {
+    let cap_mb = mem_cap_mb();
+    if arena_mb > cap_mb {
         return Err(bad_request(format!(
-            "tree too large ({arena_mb:.0} MB of solver data); reduce bet sizes or raise cap"
+            "tree too large ({arena_mb:.0} MB of solver data, cap {cap_mb:.0} MB); \
+             reduce bet sizes or set SOLVER_MEM_MB to override"
         )));
     }
 

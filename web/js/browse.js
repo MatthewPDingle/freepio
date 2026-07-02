@@ -338,8 +338,12 @@ export class Browser {
         head(s, 'END', null);
         const lbl = document.createElement('div');
         lbl.className = 'hist-chip taken';
-        const last = hist[i];
-        lbl.textContent = last && last.kind === 'terminal' ? 'Hand over' : 'Showdown';
+        // fold vs showdown: HistoryStep doesn't carry it, so look at the
+        // action that led here
+        const prev = hist[i - 1];
+        const folded = prev && prev.kind === 'action'
+          && prev.actions[prev.chosen]?.kind === 'fold';
+        lbl.textContent = folded ? 'Fold — hand over' : 'Showdown';
         s.appendChild(lbl);
       }
     });
@@ -644,10 +648,12 @@ export class Browser {
 
   async loadRunouts(btn) {
     btn.disabled = true; btn.textContent = 'computing…';
+    const forPath = JSON.stringify(this.path); // guard against navigating away mid-compute
     let rep;
     try { rep = await api.runouts(this.path); }
     catch (e) { toast(e.message, true); btn.disabled = false; btn.textContent = 'RUNOUTS REPORT'; return; }
     btn.disabled = false; btn.textContent = 'RUNOUTS REPORT';
+    if (JSON.stringify(this.path) !== forPath) return; // stale: user moved on
     this.runoutRep = rep;
     this.runoutSort = { col: 'card', dir: -1 }; // default: high card -> low
     this.renderRunouts();
@@ -1114,13 +1120,11 @@ export class Browser {
     const colors = this.actionColors();
     const acts = this.view.actions || [];
 
-    // Gather this hand's in-deck combos, then keep only those that meaningfully
-    // reach this node. A suit that folded out on an earlier street keeps a tiny
-    // non-zero reach (DCFR never plays a pure 0), so an absolute floor isn't
-    // enough — compare each combo to the busiest combo of the SAME hand and drop
-    // anything under 1% of it. That hides folded suits (e.g. J7s where only the
-    // spade combo continued) without hiding genuine low-frequency combos, and is
-    // robust at any street depth.
+    // Gather this hand's in-deck combos. ALL of them are shown (GTO Wizard
+    // does the same, and dropping combos skews the SUMMARY stats); combos
+    // that barely reach this node — e.g. a suit that folded out on an earlier
+    // street keeps a tiny non-zero reach — are dimmed rather than hidden,
+    // judged relative to the busiest combo of the SAME hand.
     const cand = [];
     let cellMaxReach = 0;
     for (const [a, b] of cellCombos(info)) {
@@ -1130,23 +1134,23 @@ export class Browser {
       if (h.reach > cellMaxReach) cellMaxReach = h.reach;
       cand.push([h, a, b, this.handMatches(p, hi)]);
     }
-    const minReach = Math.max(1e-9, cellMaxReach * 0.01);
-    const present = cand.filter(c => c[0].reach >= minReach);
-    if (!present.length) {
+    if (!cand.length) {
       content.innerHTML = '<div class="dim" style="padding:10px 4px;font-size:11px">not in range</div>';
       return;
     }
+    const minReach = Math.max(1e-9, cellMaxReach * 0.01);
 
     if (eff === 'hands') {
       // GTO Wizard layout: 2 columns up to 4 combos, 3 columns beyond.
-      const cols3 = present.length > 4;
-      const tiles = present.map(([h, a, b, m]) =>
-        this.handTile(h, a, b, isActor, colors, acts, cols3, !m));
+      const cols3 = cand.length > 4;
+      const tiles = cand.map(([h, a, b, m]) =>
+        this.handTile(h, a, b, isActor, colors, acts, cols3,
+          !m || h.reach < minReach));
       content.innerHTML =
         `<div class="hand-tiles${cols3 ? ' cols3' : ''}">${tiles.join('')}</div>`;
     } else {
       content.innerHTML = this.summaryHtml(
-        present.filter(x => x[3]), isActor, colors, acts);
+        cand.filter(x => x[3]), isActor, colors, acts);
     }
   }
 

@@ -206,6 +206,7 @@ fn run_batch(rest: &[String]) {
 
 /// Solve to target/max without per-check prints; returns (iterations, exploit%).
 fn solve_quiet(solver: &mut Solver, max_iterations: u32, target: f64, use_gpu: bool) -> (u32, f64) {
+    #[cfg(feature = "gpu")]
     let pot = solver.spot.tree.config.starting_pot;
     #[cfg(feature = "gpu")]
     if use_gpu {

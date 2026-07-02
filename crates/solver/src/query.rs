@@ -63,6 +63,22 @@ fn rake_to_target(sigma: &mut [f32], na: usize, nh: usize, reach: &[f32], target
             m[a] = 1.0;
         }
     }
+    // Hands with no mass on any targeted action can't be raked: assign them
+    // the target distribution itself, so zero-target actions stay at zero
+    // (uniform-over-everything would leak forbidden actions back in).
+    for i in 0..nh {
+        let mut mass = 0f64;
+        for a in 0..na {
+            if target[a] > 1e-9 {
+                mass += sigma[a * nh + i] as f64;
+            }
+        }
+        if mass <= 1e-12 {
+            for a in 0..na {
+                sigma[a * nh + i] = target[a];
+            }
+        }
+    }
     for _ in 0..400 {
         let mut agg = vec![0f64; na];
         let mut total = 0f64;
@@ -121,9 +137,10 @@ fn rake_to_target(sigma: &mut [f32], na: usize, nh: usize, reach: &[f32], target
                 sigma[a * nh + i] = (sigma[a * nh + i] as f64 / s) as f32;
             }
         } else {
-            let u = 1.0 / na as f32;
+            // unreachable after the pre-pass above, but keep the fallback
+            // consistent: distribute by target, never onto zeroed actions
             for a in 0..na {
-                sigma[a * nh + i] = u;
+                sigma[a * nh + i] = target[a];
             }
         }
     }
@@ -562,20 +579,43 @@ impl Solver {
     /// Map every card step to its suit-isomorphism orbit representative, so
     /// operations land on the branch CFR actually traverses.
     pub fn canonical_path(&self, path: &[PathStep]) -> Vec<PathStep> {
+        self.canonical_path_with_perm(path).0
+    }
+
+    /// Canonicalize card steps to orbit representatives, tracking the COMPOSED
+    /// suit permutation that maps the browsed branch onto the canonical one.
+    /// Later steps must canonicalize the already-permuted card (not the
+    /// original), mirroring exactly how `symmetrize` nests `copy_branch` per
+    /// street; the greedy strictly-less scan below matches its tie-breaking.
+    /// The returned suit map lets callers translate hand identities between
+    /// the browsed branch and the canonical one (identity when nothing moved).
+    pub fn canonical_path_with_perm(&self, path: &[PathStep]) -> (Vec<PathStep>, [u8; 4]) {
+        let mut composed: [u8; 4] = [0, 1, 2, 3];
         if !self.use_isomorphism || self.spot.suit_perms.len() < 2 {
-            return path.to_vec();
+            return (path.to_vec(), composed);
         }
         let mut dealt = Dealt::default();
-        path.iter()
+        let out = path
+            .iter()
             .map(|s| match s {
                 PathStep::Card { card } => match card_from_str(card) {
                     Ok(c) => {
+                        // the card as CFR sees it on the canonical branch so far
+                        let cm = crate::cards::permute_card(c, &composed);
                         let valid = self.spot.perms_fixing(&dealt);
-                        let mut rep = c;
+                        let mut rep = cm;
+                        let mut k_rep = None;
                         for &k in &valid {
-                            let pc = crate::cards::permute_card(c, &self.spot.suit_perms[k]);
+                            let pc = crate::cards::permute_card(cm, &self.spot.suit_perms[k]);
                             if pc < rep {
                                 rep = pc;
+                                k_rep = Some(k);
+                            }
+                        }
+                        if let Some(k) = k_rep {
+                            let pm = &self.spot.suit_perms[k];
+                            for s in composed.iter_mut() {
+                                *s = pm[*s as usize];
                             }
                         }
                         dealt = dealt.push(rep);
@@ -587,7 +627,8 @@ impl Solver {
                 },
                 a => a.clone(),
             })
-            .collect()
+            .collect();
+        (out, composed)
     }
 
     /// Lock a node's strategy. Each mode recomputes the locked strategy from a
@@ -600,8 +641,8 @@ impl Solver {
     ) -> Result<(), String> {
         // lock the orbit representative: that's the branch the solver visits,
         // and the lock then applies to all isomorphic runouts at once
-        let path = &self.canonical_path(path);
-        let walk = self.walk_path(path)?;
+        let (canon, perm) = self.canonical_path_with_perm(path);
+        let walk = self.walk_path(&canon)?;
         let node = &self.spot.tree.nodes[walk.node_idx as usize];
         if node.kind != KIND_ACTION {
             return Err("only action nodes can be locked".to_string());
@@ -638,11 +679,14 @@ impl Solver {
                     if combo.len() != 2 {
                         return Err(format!("expected a 2-card combo, got {:?}", edit.combo));
                     }
+                    // the combo named by the user lives on the browsed branch;
+                    // on the canonical branch it is the suit-permuted combo
+                    let c1 = crate::cards::permute_card(combo[0], &perm);
+                    let c2 = crate::cards::permute_card(combo[1], &perm);
                     let idx = self.spot.hands[p]
                         .iter()
                         .position(|h| {
-                            (h.c1 == combo[0] && h.c2 == combo[1])
-                                || (h.c1 == combo[1] && h.c2 == combo[0])
+                            (h.c1 == c1 && h.c2 == c2) || (h.c1 == c2 && h.c2 == c1)
                         })
                         .ok_or_else(|| {
                             format!("{} is not in {}'s range here", edit.combo,
@@ -782,3 +826,35 @@ impl Solver {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A hand whose entire solved mass sits on zero-target actions can't be
+    /// raked; it must be assigned the target distribution — never uniform
+    /// over all actions, which would leak forbidden actions into the lock.
+    #[test]
+    fn rake_assigns_target_to_unrakeable_hands() {
+        // 2 actions x 3 hands; hand 2 is pure on action 1 (the forbidden one)
+        let mut sigma = vec![
+            0.6, 0.3, 0.0, // action 0
+            0.4, 0.7, 1.0, // action 1
+        ];
+        let reach = [1.0f32, 1.0, 1.0];
+        let target = [1.0f32, 0.0];
+        rake_to_target(&mut sigma, 2, 3, &reach, &target);
+        for i in 0..3 {
+            assert!(
+                (sigma[i] - 1.0).abs() < 1e-6,
+                "hand {i} action0 should be 1.0, got {}",
+                sigma[i]
+            );
+            assert!(
+                sigma[3 + i].abs() < 1e-6,
+                "hand {i} action1 should be 0.0, got {}",
+                sigma[3 + i]
+            );
+        }
+    }
+}

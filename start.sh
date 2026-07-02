@@ -13,9 +13,17 @@ for d in \
   [ -d "$d" ] && export LD_LIBRARY_PATH="$d${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 done
 
-# Always (re)build with the GPU feature — cargo is incremental, so this is a
-# fast no-op when nothing changed, and it guarantees the binary actually has
-# the GPU engine rather than an older CPU-only build.
-cargo build --release -p server --features gpu
+# Build with the GPU feature only when an NVIDIA CUDA runtime is actually
+# present (nvidia-smi, or a libcuda the loader can find — WSL puts it in
+# /usr/lib/wsl/lib). On a GPU-less machine this builds and runs CPU-only.
+# Cargo is incremental, so rebuilding is a fast no-op when nothing changed.
+FEATURES="--features gpu"
+if ! command -v nvidia-smi >/dev/null 2>&1 \
+   && ! ldconfig -p 2>/dev/null | grep -q libcuda \
+   && [ ! -e /usr/lib/wsl/lib/libcuda.so.1 ]; then
+  FEATURES=""
+  echo "no NVIDIA CUDA runtime found — building CPU-only"
+fi
+cargo build --release -p server $FEATURES
 
 exec ./target/release/gto-server "$@"

@@ -587,3 +587,64 @@ fn save_load_roundtrip() {
     );
     std::fs::remove_file(path).ok();
 }
+
+/// A per-hand lock applied while browsing a non-representative isomorphic
+/// runout must land on the suit-mapped combo of the representative branch,
+/// so the browsed view shows the edit on exactly the combo the user picked.
+#[test]
+fn hands_lock_respects_suit_isomorphism() {
+    let config = SpotConfig {
+        board: "KsQs2d".to_string(),
+        range_oop: "TT,99,88,77,AKs,AQs,AJs,JTs,T9s,87s,AKo,KQo".to_string(),
+        range_ip: "QQ,JJ,TT,AKs,KQs,QJs,T9s,98s,AQo".to_string(),
+        tree: TreeConfig {
+            starting_pot: 60.0,
+            effective_stack: 200.0,
+            oop: [sizing("50", ""), sizing("50", ""), sizing("50", "")],
+            ip: [sizing("50", ""), sizing("50", ""), sizing("50", "")],
+            ..Default::default()
+        },
+    };
+    let spot = Spot::new(config).unwrap();
+    assert_eq!(spot.suit_perms.len(), 2, "expected exactly the c<->h swap");
+    let mut solver = Solver::new(Arc::new(spot));
+    for _ in 0..100 {
+        solver.iterate();
+    }
+    use solver::PathStep;
+    let path = vec![
+        PathStep::Action { index: 0 },
+        PathStep::Action { index: 0 },
+        PathStep::Card { card: "4h".to_string() },
+    ];
+    // sanity: 4c is the representative, so browsing 4h exercises the remap
+    let canon = solver.canonical_path(&path);
+    assert!(
+        matches!(&canon[2], PathStep::Card { card } if card == "4c"),
+        "4c should be the orbit representative of the 4h turn"
+    );
+    solver
+        .lock_node(
+            &path,
+            LockMode::Hands {
+                edits: vec![solver::query::HandEdit {
+                    combo: "AhJh".into(),
+                    freqs: vec![0.37, 0.63],
+                }],
+            },
+            "iso hand lock".into(),
+        )
+        .unwrap();
+    for _ in 0..50 {
+        solver.iterate();
+    }
+    solver.ensure_symmetric();
+    let v = solver.node_view(&path).unwrap();
+    let idx = hand_index(&solver.spot, 0, "AhJh");
+    let st = v.players[0].hands[idx].strategy.as_ref().unwrap();
+    assert!(
+        (st[0] - 0.37).abs() < 5e-3,
+        "AhJh on the browsed 4h branch should show its own lock (37% check), got {}",
+        st[0]
+    );
+}
