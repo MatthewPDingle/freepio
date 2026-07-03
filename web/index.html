@@ -114,7 +114,7 @@
         <div class="field-grid">
           <label data-tip="Hard cap on CFR iterations. The solve stops earlier as soon as the accuracy target is hit, so this is just a safety limit.">max iterations <input type="number" id="run-iters" value="1000" min="10"></label>
           <label data-tip="Stop when a perfect counter-strategy could only gain this much, as % of the pot. 0.5% is fine for quick looks, 0.2–0.3% for serious study. Halving the target roughly doubles solve time.">target exploit % pot <input type="number" id="run-target" value="0.3" min="0.01" step="0.05"></label>
-          <label data-tip="Measure accuracy every N iterations. Each check costs about two iterations of work, so don't set it too low on big trees.">check every <input type="number" id="run-check" value="20" min="1"></label>
+          <label data-tip="Measure accuracy every N iterations. Each check costs about two iterations of work, so don't set it too low on big trees.">check every <input type="number" id="run-check" value="10" min="1"></label>
         </div>
         <div class="btn-row">
           <button id="btn-solve" class="btn primary" data-tip="Start (or continue) solving the built tree. You can stop and resume — progress is kept.">SOLVE</button>
@@ -139,6 +139,7 @@
           <div class="bignum" data-tip="How much a perfect exploiter could win against the current solution, as % of the pot. This is the real distance from game-theory optimal — at 0.3% the strategies are effectively unexploitable for practical purposes."><label>exploitability</label><div id="exploit-now" class="mono">—</div><span class="dim">% of pot</span></div>
           <div class="bignum" data-tip="CFR iterations completed. Each iteration updates both players' strategies across the whole tree."><label>iteration</label><div id="iter-now" class="mono">0</div></div>
           <div class="bignum"><label>elapsed</label><div id="elapsed-now" class="mono">0s</div></div>
+          <div class="bignum" data-tip="Solver speed measured between progress updates, smoothed. Includes time spent in accuracy checks, so it dips briefly at every check."><label>speed</label><div id="ips-now" class="mono">—</div><span class="dim">iter/s</span></div>
         </div>
         <canvas id="convergence-chart" width="900" height="320" data-tip="Exploitability over iterations on a log scale. The dashed line is your target — when the curve crosses it, the solve stops."></canvas>
       </section>

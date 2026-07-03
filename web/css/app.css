@@ -192,6 +192,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .field-grid label {
   display: flex; flex-direction: column; gap: 5px;
   font-size: 11px; color: var(--ink-dim); letter-spacing: .04em;
+  min-width: 0; /* let grid columns shrink the label instead of overflowing */
+}
+.field-grid input[type="number"], .field-grid input[type="text"] {
+  width: 100%; min-width: 0; box-sizing: border-box;
 }
 .field-grid label.check { flex-direction: row; align-items: center; gap: 8px; }
 

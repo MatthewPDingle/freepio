@@ -434,6 +434,23 @@ $('btn-solve-top').addEventListener('click', () => $('btn-solve').click());
 $('btn-stop-top').addEventListener('click', () => $('btn-stop').click());
 let firstPoll = true;
 
+// iterations/sec from successive status polls (client-side delta, so it
+// survives resumed solves where iteration is cumulative but elapsed resets);
+// lightly smoothed to keep the readout steady.
+let ipsPrev = null, ipsEma = null;
+function updateIps(st) {
+  const el = $('ips-now');
+  if (!el) return;
+  if (st.state !== 'running') { ipsPrev = null; ipsEma = null; return; }
+  const now = performance.now();
+  if (ipsPrev && st.iteration > ipsPrev.iter) {
+    const inst = (st.iteration - ipsPrev.iter) / ((now - ipsPrev.t) / 1000);
+    ipsEma = ipsEma == null ? inst : 0.7 * ipsEma + 0.3 * inst;
+    el.textContent = ipsEma >= 10 ? ipsEma.toFixed(0) : ipsEma.toFixed(1);
+  }
+  if (!ipsPrev || st.iteration !== ipsPrev.iter) ipsPrev = { iter: st.iteration, t: now };
+}
+
 function startPolling() {
   if (state.polling) clearInterval(state.polling);
   state.polling = setInterval(pollStatus, 1000);
@@ -452,6 +469,7 @@ async function pollStatus() {
 
   $('iter-now').textContent = st.iteration;
   $('elapsed-now').textContent = `${Math.round(st.elapsed_secs)}s`;
+  updateIps(st);
   $('exploit-now').textContent = st.exploit_pct > 0 ? st.exploit_pct.toFixed(3) : '—';
   drawChart(st.history || []);
 
