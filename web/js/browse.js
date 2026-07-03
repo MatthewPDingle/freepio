@@ -52,6 +52,9 @@ export class Browser {
     this.view = null;
     this.player = 0;     // matrix viewpoint
     this.mode = 'strategy';
+    this.exploit = null;          // /api/exploit payload for EXPLOIT mode
+    this._exploitHands = null;    // view-shaped cache of exploit.hands
+    this._exploitLoading = false;
     this.comboRows = false; // orientation: false = Horizontal (combined bar), true = Vertical (per-combo columns)
     this.fillMode = 'normalized'; // 'normalized' | 'range' | 'full'
     this.selectedCell = null; // pinned by click
@@ -154,6 +157,8 @@ export class Browser {
     if (this.els.matrix) this.els.matrix.style.opacity = '.55';
     try {
       this.view = await api.node(this.path);
+      this.exploit = null;        // stale for the new node/strategy state
+      this._exploitHands = null;
     } catch (e) {
       toast(`node error: ${e.message}`, true);
       if (this.path.length) { this.path = []; this.line = []; this.lineHistory = null; return this.refresh(); }
@@ -388,11 +393,12 @@ export class Browser {
     picker.classList.add('hidden');
     this.els.runouts && (this.els.runouts.innerHTML = '');
     this.runoutRep = null; // drop any prior runouts report when the node changes
+    if (this.mode === 'exploit') this.renderExploitBanner(el);
 
     if (this.view.node_type === 'action') {
       const colors = this.actionColors();
       const actor = this.view.player;
-      const hands = this.view.players[actor].hands;
+      const hands = this.handsFor(actor);
       this.els.actionsTitle.textContent =
         `${this.posLabel(actor)} to act — street ${['flop','turn','river'][this.view.street]}`;
       // global frequencies: reach-weighted average strategy
@@ -781,11 +787,81 @@ export class Browser {
     return this.filterMode === 'include' ? match : !match;
   }
 
+  // ----- Exploit (max-exploit / best-response) mode -----
+
+  exploitReady() {
+    return !!(this.exploit && this.exploit.exploiter === this.player
+      && this.exploit._path === JSON.stringify(this.path));
+  }
+
+  /** Effective render mode: in EXPLOIT, strategy-style cells when the
+   *  exploiter acts here, else an EV-style heatmap of the per-hand gain. */
+  effMode() {
+    if (this.mode !== 'exploit') return this.mode;
+    return this.exploitReady() && this.exploit.player === this.exploit.exploiter
+      ? 'strategy' : 'ev';
+  }
+
+  /** Hand array driving the matrix: the exploit overlay (strategy = BR
+   *  actions, ev = gain vs current) when active, else the solver view. */
+  handsFor(p) {
+    if (this.mode === 'exploit' && this.exploitReady() && p === this.player) {
+      if (!this._exploitHands) {
+        this._exploitHands = this.exploit.hands.map(h => ({
+          ...h,
+          strategy: h.br_strategy || null,
+          ev: h.gain != null ? h.gain : null,
+          eq: null,
+          evs: h.evs || null,
+        }));
+      }
+      return this._exploitHands;
+    }
+    return this.view.players[p].hands;
+  }
+
+  async loadExploit() {
+    if (this._exploitLoading) return;
+    this._exploitLoading = true;
+    const forPath = JSON.stringify(this.path), forPlayer = this.player;
+    try {
+      const ex = await api.exploit(this.path, this.player);
+      if (JSON.stringify(this.path) === forPath && this.player === forPlayer
+          && this.mode === 'exploit') {
+        ex._path = forPath;
+        this.exploit = ex;
+        this._exploitHands = null;
+        this.renderActions();
+        this.renderMatrix();
+        this.renderLegend();
+      }
+    } catch (e) { toast(e.message, true); }
+    finally { this._exploitLoading = false; }
+  }
+
+  renderExploitBanner(el) {
+    const b = document.createElement('div');
+    b.className = 'exploit-banner';
+    if (!this.exploitReady()) {
+      b.innerHTML = `<b>EXPLOIT</b> computing best response for ${this.posLabel(this.player)}…`;
+    } else {
+      const e = this.exploit;
+      const nm = this.posLabel(e.exploiter);
+      b.innerHTML = e.avg_gain != null
+        ? `<b>EXPLOIT</b> ${nm} best response vs current strategy: EV ` +
+          `<b>${fmt(e.avg_br_ev)}</b> vs ${fmt(e.avg_cur_ev)} → gains ` +
+          `<b>${fmt(e.avg_gain)}</b> chips/hand (reach-weighted)` +
+          (e.locked ? ' · this node is locked: BR cannot deviate here' : '')
+        : `<b>EXPLOIT</b> ${nm} has no reachable hands at this node.`;
+    }
+    el.appendChild(b);
+  }
+
   /** Per-combo data for a cell (present + filter-matching, with reach): for the
    *  per-combo EV/EQ columns. */
   cellCombosData(i, j, p) {
     const idx = this.handIdx[p];
-    const hands = this.view.players[p].hands;
+    const hands = this.handsFor(p);
     const out = [];
     for (const [a, b] of cellCombos(cellInfo(i, j))) {
       const hi = idx.get(comboIndex(a, b));
@@ -801,7 +877,7 @@ export class Browser {
   cellAgg(i, j, p) {
     // Aggregate hands of player p within a cell class.
     const combos = cellCombos(cellInfo(i, j));
-    const hands = this.view.players[p].hands;
+    const hands = this.handsFor(p);
     const idx = this.handIdx[p];
     let reach = 0, weight = 0, ev = 0, evW = 0, eq = 0, eqW = 0;
     let strat = null, na = 0;
@@ -835,7 +911,9 @@ export class Browser {
   renderMatrix() {
     const p = this.player;
     const colors = this.actionColors();
-    const hands = this.view.players[p].hands;
+    if (this.mode === 'exploit' && !this.exploitReady()) this.loadExploit();
+    const effMode = this.effMode();
+    const hands = this.handsFor(p);
     const aggs = [];
     for (let i = 0; i < 13; i++)
       for (let j = 0; j < 13; j++) aggs.push(this.cellAgg(i, j, p));
@@ -869,8 +947,8 @@ export class Browser {
     };
     // EV colour ramp range across the displayed (filtered) combos
     let evMin = Infinity, evMax = -Infinity;
-    if (this.mode === 'ev') {
-      this.view.players[p].hands.forEach((h, hi) => {
+    if (effMode === 'ev') {
+      this.handsFor(p).forEach((h, hi) => {
         if (h.reach > 1e-9 && h.ev != null && this.handMatches(p, hi)) {
           if (h.ev < evMin) evMin = h.ev;
           if (h.ev > evMax) evMax = h.ev;
@@ -925,7 +1003,7 @@ export class Browser {
         cell.classList.toggle('selected',
           this.selectedCell && this.selectedCell[0] === i && this.selectedCell[1] === j);
         const intensity = fillH(agg.reach / Math.max(agg.total, 1));
-        if (this.mode === 'strategy' && agg.strat
+        if (effMode === 'strategy' && agg.strat
             && this.actionFilter != null && this.actionFilter < agg.strat.length) {
           // Action filter: show ONLY the selected action, in its colour. The
           // fill mode AND orientation apply exactly like the unfiltered STRAT
@@ -960,7 +1038,7 @@ export class Browser {
             bars.style.height = `${(intensity * f * 100).toFixed(1)}%`;
             sub.textContent = show ? `${Math.round(f * 100)}%` : '';
           }
-        } else if (this.mode === 'strategy' && agg.strat && this.comboRows) {
+        } else if (effMode === 'strategy' && agg.strat && this.comboRows) {
           // one vertical column per combo (cell chopped vertically): column
           // height = its reach, split by that combo's action frequencies with
           // the most aggressive actions (reds) at the bottom
@@ -979,7 +1057,7 @@ export class Browser {
             }).join('');
             sub.textContent = '';
           }
-        } else if (this.mode === 'strategy' && agg.strat) {
+        } else if (effMode === 'strategy' && agg.strat) {
           agg.strat.forEach((s, k) => {
             const d = document.createElement('div');
             d.style.width = `${s * 100}%`;
@@ -994,14 +1072,14 @@ export class Browser {
           // GTO Wizard "Strategy + EV": show the hand's EV in the cell corner
           sub.textContent =
             agg.ev != null && agg.reach > 1e-9 ? fmt(agg.ev) : '';
-        } else if (this.mode === 'strategy') {
+        } else if (effMode === 'strategy') {
           // not the actor: range-weight presence as a vertical orange bar
           bars.style.opacity = 0;
           fill.style.height = `${(intensity * 100).toFixed(1)}%`;
           fill.style.background = '#f28c26';
           fill.style.opacity = agg.reach > 1e-9 ? 0.9 : 0;
           sub.textContent = '';
-        } else if (this.mode === 'ev') {
+        } else if (effMode === 'ev') {
           // Vertical (comboRows): one column per combo, height = its reach,
           // colour = its EV, natural combo order (same column = same combo as
           // STRAT/EQ). Horizontal: one combined bar coloured by aggregate EV.
@@ -1013,7 +1091,7 @@ export class Browser {
             renderAgg(bars, fill, sub, agg.ev != null ? evColor(agg.ev) : null,
               intensity, evText, agg.reach);
           }
-        } else if (this.mode === 'eq') {
+        } else if (effMode === 'eq') {
           const eqText = agg.eq != null && agg.reach > 1e-9 ? `${Math.round(agg.eq * 100)}%` : '';
           if (this.comboRows) {
             const list = this.cellCombosData(i, j, p).filter(c => c.eq != null);
@@ -1030,6 +1108,15 @@ export class Browser {
   renderLegend() {
     const el = this.els.legend;
     el.innerHTML = '';
+    if (this.mode === 'exploit') {
+      const key = document.createElement('span');
+      key.className = 'key';
+      key.textContent = this.effMode() === 'strategy'
+        ? `EXPLOIT: cells = ${this.posLabel(this.player)}'s best-response actions (mostly pure); cell number = EV gain vs current strategy`
+        : `EXPLOIT: heatmap = ${this.posLabel(this.player)}'s per-hand EV gain from best-responding vs the current strategy`;
+      el.appendChild(key);
+      return;
+    }
     if (this.view.node_type === 'action' && this.mode === 'strategy'
         && this.view.player === this.player) {
       const colors = this.actionColors();

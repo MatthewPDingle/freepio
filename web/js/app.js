@@ -558,13 +558,15 @@ window.browser = browser;
 $('seg-player').querySelectorAll('button').forEach(b =>
   b.addEventListener('click', () => {
     browser.player = +b.dataset.v;
-    browser.syncSegs(); browser.renderMatrix(); browser.renderLegend();
+    browser.syncSegs(); browser.renderActions(); browser.renderMatrix(); browser.renderLegend();
     browser.renderHandsPanel(); browser.drawEquityChart();
   }));
 $('seg-mode').querySelectorAll('button').forEach(b =>
   b.addEventListener('click', () => {
     browser.mode = b.dataset.v;
-    browser.syncSegs(); browser.renderMatrix(); browser.renderLegend();
+    // renderActions too: the EXPLOIT banner lives in the actions panel and
+    // must appear/disappear with the mode
+    browser.syncSegs(); browser.renderActions(); browser.renderMatrix(); browser.renderLegend();
   }));
 
 // cell-display menu: fill mode (Normalized/Range/Full) + orientation (Vertical/Horizontal)

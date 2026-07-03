@@ -648,3 +648,53 @@ fn hands_lock_respects_suit_isomorphism() {
         st[0]
     );
 }
+
+/// Exploit view: the best response against a locked always-caller bets the
+/// nuts, never bluffs the air, and per-hand BR EV dominates the current
+/// strategy's EV (with a strictly positive average gain, since the solved
+/// strategy still bluffs at the equilibrium frequency).
+#[test]
+fn exploit_view_vs_locked_station() {
+    let config = SpotConfig {
+        board: "QcJc9c3d2d".to_string(),
+        range_oop: "AcKc,8h7h".to_string(),
+        range_ip: "QdQh".to_string(),
+        tree: TreeConfig {
+            starting_pot: 100.0,
+            effective_stack: 100.0,
+            oop: [sizing("", ""), sizing("", ""), sizing("100", "")],
+            ip: [sizing("", ""), sizing("", ""), sizing("", "")],
+            ..Default::default()
+        },
+    };
+    let spot = Spot::new(config).unwrap();
+    let mut solver = Solver::new(Arc::new(spot));
+    for _ in 0..500 {
+        solver.iterate();
+    }
+    // lock IP to always-call the bet
+    let bet_path = vec![solver::PathStep::Action { index: 1 }];
+    solver
+        .lock_node(
+            &bet_path,
+            LockMode::Range { freqs: vec![0.0, 1.0] },
+            "station".into(),
+        )
+        .unwrap();
+
+    let v = solver.exploit_view(&[], 0).unwrap();
+    assert_eq!(v.exploiter, 0);
+    let nuts = hand_index(&solver.spot, 0, "AcKc");
+    let air = hand_index(&solver.spot, 0, "8h7h");
+    let st_nuts = v.hands[nuts].br_strategy.as_ref().unwrap();
+    let st_air = v.hands[air].br_strategy.as_ref().unwrap();
+    assert!(st_nuts[1] > 0.999, "BR must always bet the nuts, got {:?}", st_nuts);
+    assert!(st_air[0] > 0.999, "BR must never bluff vs a station, got {:?}", st_air);
+    for h in &v.hands {
+        if let (Some(b), Some(c)) = (h.br_ev, h.cur_ev) {
+            assert!(b >= c - 1e-3, "BR EV must dominate: {} vs {} ({})", b, c, h.combo);
+        }
+    }
+    let gain = v.avg_gain.expect("avg gain");
+    assert!(gain > 0.5, "exploiting a station should gain plainly, got {gain}");
+}

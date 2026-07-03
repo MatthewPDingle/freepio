@@ -20,6 +20,7 @@ export const api = {
   stop: () => req('POST', '/api/stop'),
   status: () => req('GET', '/api/status'),
   node: path => req('POST', '/api/node', { path }),
+  exploit: (path, exploiter) => req('POST', '/api/exploit', { path, exploiter }),
   lock: (path, mode, label) => req('POST', '/api/lock', { path, mode, label }),
   unlock: path => req('POST', '/api/unlock', { path }),
   locks: () => req('GET', '/api/locks'),

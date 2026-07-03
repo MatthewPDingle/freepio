@@ -495,6 +495,14 @@ textarea {
 .act-sumbar i { display: block; height: 100%; }
 .act-filter-hint { font-size: 10px; color: var(--ink-faint); margin: 4px 0 2px; }
 
+/* exploit (max-exploit / best-response) mode */
+.exploit-banner {
+  margin: 6px 0 8px; padding: 6px 8px; font-size: 11px; line-height: 1.5;
+  color: var(--ink-dim); background: var(--accent-soft);
+  border-left: 3px solid var(--accent); border-radius: 3px;
+}
+.exploit-banner b { color: var(--ink); }
+
 /* combo detail */
 #combo-detail { max-height: 460px; overflow-y: auto; }
 .combo-row {

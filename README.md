@@ -66,10 +66,17 @@ Optional environment:
    per-combo breakdown (strategy, reach, EQ, EV per action). At card nodes,
    pick the turn/river from the deck or open the **RUNOUTS REPORT** (strategy
    + equity for every possible next card).
-4. **NODE LOCKING** — at any decision node, scale action weights (0 = never,
-   1 = unchanged) and lock. Re-run SOLVE and the rest of the tree re-optimizes
-   around your assumption ("what if villain never raises here?"). Verified by
-   test: locking the bluff-catcher to always-call drives bluffing to zero.
+4. **NODE LOCKING** — at any decision node, set aggregate action frequencies
+   or exact per-hand frequencies and lock. Re-run SOLVE and the rest of the
+   tree re-optimizes around your assumption ("what if villain never raises
+   here?"). Verified by test: locking the bluff-catcher to always-call drives
+   bluffing to zero.
+5. **EXPLOIT** — the fourth matrix mode: a true best response for either
+   player against the opponent's CURRENT strategy, locks included. Lock
+   villain to a pool tendency (station, never-bluffs, over-folds), flip to
+   EXPLOIT, and read off the max-exploit strategy plus each hand's EV gain
+   over the equilibrium line — no re-solve needed. Verified by test: vs a
+   locked always-caller the best response bets the nuts and never bluffs.
 
 ## Engine
 
@@ -162,9 +169,11 @@ writes `saves/batch_<board>.gto` per board.
 Everything the UI does is plain JSON over HTTP — scriptable:
 
 `POST /api/spot`, `POST /api/solve`, `POST /api/stop`, `GET /api/status`,
-`POST /api/node {path}`, `POST /api/lock {path, weights}`, `POST /api/unlock`,
-`GET /api/locks`, `POST /api/runouts {path}`, `POST /api/range/parse`,
-`POST /api/save|load {name}`, `GET /api/saves`, `GET /api/presets`.
+`POST /api/node {path}`, `POST /api/exploit {path, exploiter}` (per-hand best
+response + EV gain vs the current strategy), `POST /api/lock {path, mode}`,
+`POST /api/unlock`, `GET /api/locks`, `POST /api/runouts {path}`,
+`POST /api/range/parse`, `POST /api/save|load {name}`, `GET /api/saves`,
+`GET /api/presets`.
 
 Path steps: `{"type":"action","index":0}` / `{"type":"card","card":"Ah"}`.
 

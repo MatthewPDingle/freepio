@@ -575,6 +575,34 @@ async fn get_node(
 }
 
 #[derive(Deserialize)]
+struct ExploitRequest {
+    path: Vec<PathStep>,
+    /// 0 = OOP, 1 = IP: the player whose best response to compute.
+    exploiter: u8,
+}
+
+async fn exploit_view(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ExploitRequest>,
+) -> Result<Json<solver::query::ExploitView>, ApiError> {
+    let solver = {
+        let guard = state.session.lock().unwrap();
+        guard
+            .as_ref()
+            .map(|s| s.solver.clone())
+            .ok_or_else(|| bad_request("no spot built yet"))?
+    };
+    let view = tokio::task::spawn_blocking(move || {
+        let s = solver.lock().unwrap();
+        s.exploit_view(&req.path, req.exploiter as usize)
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(view))
+}
+
+#[derive(Deserialize)]
 struct LockRequest {
     path: Vec<PathStep>,
     /// How to build the lock: freeze / range frequencies / per-hand edits.
@@ -924,6 +952,7 @@ async fn main() {
         .route("/api/stop", post(stop_solve))
         .route("/api/status", get(get_status))
         .route("/api/node", post(get_node))
+        .route("/api/exploit", post(exploit_view))
         .route("/api/lock", post(lock_node))
         .route("/api/unlock", post(unlock_node))
         .route("/api/locks", get(list_locks))

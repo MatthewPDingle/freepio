@@ -196,6 +196,45 @@ pub struct NodeView {
     pub history: Vec<HistoryStep>,
 }
 
+/// Per-hand best-response data for the exploit ("max exploit") view.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExploitHandView {
+    pub combo: String,
+    pub c1: u8,
+    pub c2: u8,
+    pub weight: f32,
+    pub reach: f32,
+    /// EV of best-responding from here on (pot-share convention).
+    pub br_ev: Option<f32>,
+    /// EV of the current average strategy (same convention).
+    pub cur_ev: Option<f32>,
+    /// br_ev - cur_ev: what this hand gains by max-exploiting.
+    pub gain: Option<f32>,
+    /// Exploiter-to-act nodes only: the best response (one-hot, ties split;
+    /// the lock itself at locked nodes, where deviating is not allowed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub br_strategy: Option<Vec<f32>>,
+    /// Exploiter-to-act nodes only: EV per action under BR continuation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evs: Option<Vec<Option<f32>>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExploitView {
+    pub node_type: String,
+    pub exploiter: u8,
+    /// Actor at this node (action nodes only).
+    pub player: Option<u8>,
+    pub actions: Vec<ActionView>,
+    pub locked: bool,
+    pub hands: Vec<ExploitHandView>,
+    /// Reach-weighted average EV under best response / current strategy, and
+    /// the difference (chips) — the headline "how exploitable is this node".
+    pub avg_br_ev: Option<f32>,
+    pub avg_cur_ev: Option<f32>,
+    pub avg_gain: Option<f32>,
+}
+
 /// One stop along the walked line, for the action-history bar.
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryStep {
@@ -721,6 +760,166 @@ impl Solver {
         let mut v: Vec<String> = self.lock_labels.values().cloned().collect();
         v.sort();
         v
+    }
+
+    /// Best-response ("max exploit") view at a node: what each of the
+    /// exploiter's hands gains by deviating to a true best response against
+    /// the opponent's CURRENT strategy — locks included, which is the point:
+    /// lock villain to a pool tendency, then read off what beats it. The
+    /// exploiter's own locked nodes are constraints the best responder cannot
+    /// deviate at (mirroring `br_into`). The path is canonicalized and the
+    /// per-hand results mapped back through the suit permutation, so browsing
+    /// an isomorphic runout reports the browsed branch's own combos.
+    pub fn exploit_view(&self, path: &[PathStep], p: usize) -> Result<ExploitView, String> {
+        if p > 1 {
+            return Err("exploiter must be 0 (OOP) or 1 (IP)".to_string());
+        }
+        let spot = &*self.spot;
+        let (canon, perm) = self.canonical_path_with_perm(path);
+        let walk = self.walk_path(&canon)?;
+        let node = &spot.tree.nodes[walk.node_idx as usize];
+        let nh = spot.hands[p].len();
+        let reach_o = &walk.reach[1 - p];
+        let valid = self.valid_opp_sum(p, reach_o);
+
+        // canonical-branch hand index for each browsed-branch hand
+        // (identity table when the path needed no remapping)
+        let k = spot
+            .suit_perms
+            .iter()
+            .position(|pm| *pm == perm)
+            .unwrap_or(0);
+        let tbl = &spot.hand_perm[p][k];
+
+        let is_actor = node.kind == KIND_ACTION && node.player as usize == p;
+        let na = if node.kind == KIND_ACTION {
+            node.num_children as usize
+        } else {
+            0
+        };
+        let lock = self.locks.get(&walk.node_idx);
+
+        // Per-action BR continuation values at actor nodes, then the per-hand
+        // BR value here (argmax, or the lock-weighted sum when constrained).
+        let mut acfv: Vec<Vec<f32>> = Vec::new();
+        let br_cfv: Vec<f32> = if is_actor {
+            for a in 0..na {
+                let child = spot.tree.children[node.children_start as usize + a];
+                acfv.push(self.traverse_br(child, p, reach_o, walk.dealt));
+            }
+            (0..nh)
+                .map(|i| match lock {
+                    Some(l) => (0..na).map(|a| l[a * nh + i] * acfv[a][i]).sum(),
+                    None => (0..na)
+                        .map(|a| acfv[a][i])
+                        .fold(f32::NEG_INFINITY, f32::max),
+                })
+                .collect()
+        } else {
+            self.traverse_br(walk.node_idx, p, reach_o, walk.dealt)
+        };
+        let cur_cfv = self.traverse_avg(walk.node_idx, p, reach_o, walk.dealt);
+
+        let put = node.put[p];
+        let ev_of = |cfv: f32, i: usize| -> Option<f32> {
+            if valid[i] > 1e-9 {
+                Some((cfv as f64 / valid[i] + put) as f32)
+            } else {
+                None
+            }
+        };
+
+        let hands: Vec<ExploitHandView> = (0..nh)
+            .map(|i| {
+                let h = &spot.hands[p][i];
+                let j = tbl[i] as usize;
+                let br_ev = ev_of(br_cfv[j], j);
+                let cur_ev = ev_of(cur_cfv[j], j);
+                let gain = match (br_ev, cur_ev) {
+                    (Some(b), Some(c)) => Some(b - c),
+                    _ => None,
+                };
+                let (br_strategy, evs) = if is_actor {
+                    let strat: Vec<f32> = match lock {
+                        Some(l) => (0..na).map(|a| l[a * nh + j]).collect(),
+                        None => {
+                            let m = (0..na)
+                                .map(|a| acfv[a][j])
+                                .fold(f32::NEG_INFINITY, f32::max);
+                            let eps = (m.abs() * 1e-5).max(1e-5);
+                            let win: Vec<bool> =
+                                (0..na).map(|a| m - acfv[a][j] <= eps).collect();
+                            let w = win.iter().filter(|&&x| x).count().max(1) as f32;
+                            (0..na)
+                                .map(|a| if win[a] { 1.0 / w } else { 0.0 })
+                                .collect()
+                        }
+                    };
+                    let evs = (0..na).map(|a| ev_of(acfv[a][j], j)).collect();
+                    (Some(strat), Some(evs))
+                } else {
+                    (None, None)
+                };
+                ExploitHandView {
+                    combo: combo_to_string(h.c1, h.c2),
+                    c1: h.c1,
+                    c2: h.c2,
+                    weight: h.weight,
+                    reach: walk.reach[p][j],
+                    br_ev,
+                    cur_ev,
+                    gain,
+                    br_strategy,
+                    evs,
+                }
+            })
+            .collect();
+
+        // reach-weighted averages for the banner
+        let mut wsum = 0f64;
+        let (mut b, mut c) = (0f64, 0f64);
+        for h in &hands {
+            if let (Some(be), Some(ce)) = (h.br_ev, h.cur_ev) {
+                let w = h.reach as f64;
+                if w > 0.0 {
+                    wsum += w;
+                    b += w * be as f64;
+                    c += w * ce as f64;
+                }
+            }
+        }
+        let (avg_br_ev, avg_cur_ev, avg_gain) = if wsum > 1e-12 {
+            (
+                Some((b / wsum) as f32),
+                Some((c / wsum) as f32),
+                Some(((b - c) / wsum) as f32),
+            )
+        } else {
+            (None, None, None)
+        };
+
+        Ok(ExploitView {
+            node_type: match node.kind {
+                KIND_ACTION => "action",
+                KIND_CHANCE => "chance",
+                KIND_TERM_FOLD => "terminal_fold",
+                KIND_TERM_SHOWDOWN => "terminal_showdown",
+                _ => "?",
+            }
+            .to_string(),
+            exploiter: p as u8,
+            player: if node.kind == KIND_ACTION {
+                Some(node.player)
+            } else {
+                None
+            },
+            actions: self.action_views(walk.node_idx),
+            locked: self.locks.contains_key(&walk.node_idx),
+            hands,
+            avg_br_ev,
+            avg_cur_ev,
+            avg_gain,
+        })
     }
 
     /// Per-card strategy/equity overview at a chance node.
