@@ -586,6 +586,24 @@ fn generated_profiles_match_stats()  {
     let cont_aa = b0.call[aa] + b0.raise[aa] + b0.jam[aa];
     assert!(cont_aa > 0.99, "AA must be in a 60% range");
 
+    // The whale's defend-vs-raise range must be HUMAN-shaped, not
+    // equilibrium-polarized: dominated broadways in (fish call Q9o),
+    // low suited junk out (fish don't call raises with 53s).
+    let bvr = whale.buckets[BUCKET_VS_RAISE as usize].as_ref().unwrap();
+    let q9o = solver::preflop::equity::class_index(10, 7, false);
+    let three2s = solver::preflop::equity::class_index(1, 0, true);
+    let cont = |b: &solver::preflop::BucketPolicy, h: usize| b.call[h] + b.raise[h] + b.jam[h];
+    assert!(
+        cont(bvr, q9o) > 0.9,
+        "a whale calls raises with Q9o, got {}",
+        cont(bvr, q9o)
+    );
+    assert!(
+        cont(bvr, three2s) < 0.1,
+        "even a whale's 55% defend excludes 32s, got {}",
+        cont(bvr, three2s)
+    );
+
     // a nit/OMC: tiny pfr -> premiums raise, junk folds
     let nit_stats = solver::preflop::archetypes()
         .into_iter()

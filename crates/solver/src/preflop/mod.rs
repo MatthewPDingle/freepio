@@ -1204,16 +1204,44 @@ impl PreflopSolver {
             (fourbet / 100.0).clamp(0.0, 1.0),
         );
 
+        // raw card appeal (equity vs random): how naive players rank hands —
+        // high-card heavy, domination-blind
+        let strength: Vec<f64> = (0..NUM_CLASSES)
+            .map(|h| {
+                (0..NUM_CLASSES)
+                    .map(|j| class_prob(j) as f64 * self.eq.eq(h, j) as f64)
+                    .sum()
+            })
+            .collect();
+        let rank_positions = |score: &dyn Fn(usize) -> f64| -> Vec<f64> {
+            let mut idxs: Vec<usize> = (0..NUM_CLASSES).collect();
+            idxs.sort_by(|&x, &y| score(y).partial_cmp(&score(x)).unwrap());
+            let mut rank = vec![0f64; NUM_CLASSES];
+            for (pos, &h) in idxs.iter().enumerate() {
+                rank[h] = pos as f64;
+            }
+            rank
+        };
+        let rank_str = rank_positions(&|h| strength[h]);
+
         let mut buckets: Vec<Option<BucketPolicy>> = Vec::with_capacity(NUM_BUCKETS);
         for b in 0..NUM_BUCKETS {
             let (t_cont, t_raise) = targets[b];
-            // rank-and-fill the continuing range by continue propensity
+            // Continuing range ordering: blend the equilibrium's playability
+            // ranking with raw card appeal by naiveté. Equilibrium defense
+            // vs raises is POLARIZED (calls 53s, folds Q9o — domination is
+            // priced in); naive players do the opposite, so their ranges
+            // must be appeal-ordered or whale call ranges come out absurd.
+            let rank_eq = rank_positions(&|h| prop(b, h, &c));
+            let key = |h: usize| -> f64 {
+                (1.0 - stats.flatten) * rank_eq[h] + stats.flatten * rank_str[h]
+            };
             let mut order: Vec<usize> = (0..NUM_CLASSES).collect();
             order.sort_by(|&x, &y| {
-                prop(b, y, &c)
-                    .partial_cmp(&prop(b, x, &c))
+                key(x)
+                    .partial_cmp(&key(y))
                     .unwrap()
-                    .then(prop(b, y, &r).partial_cmp(&prop(b, x, &r)).unwrap())
+                    .then(strength[y].partial_cmp(&strength[x]).unwrap())
             });
             let mut cont = vec![0f32; NUM_CLASSES];
             let mut acc = 0f64;
@@ -1230,13 +1258,6 @@ impl PreflopSolver {
             // baseline solves limp-trap AA at real frequency, which would
             // misplace premiums in a small raising range; humans with a
             // 1.5% PFR raise their strongest hands, full stop.
-            let strength: Vec<f64> = (0..NUM_CLASSES)
-                .map(|h| {
-                    (0..NUM_CLASSES)
-                        .map(|j| class_prob(j) as f64 * self.eq.eq(h, j) as f64)
-                        .sum()
-                })
-                .collect();
             let mut order_r: Vec<usize> = (0..NUM_CLASSES).collect();
             order_r.sort_by(|&x, &y| {
                 strength[y]
@@ -1579,8 +1600,11 @@ pub struct HudStats {
     pub squeeze: f64,
     #[serde(default)]
     pub fourbet: Option<f64>,
-    /// 0 = fully positional (each seat distorts its own equilibrium),
-    /// 1 = position-blind (fish): ranked against the table-average shape.
+    /// Naiveté, 0..1. At 0 ranges are solver-shaped: positional (each seat
+    /// distorts its own equilibrium) and ordered by playability (equilibrium
+    /// defense prices in domination). At 1 the player "plays his cards":
+    /// position-blind AND ordered by raw card appeal (equity vs random) —
+    /// a fish calls Q9o long before 43s, the equilibrium does the reverse.
     #[serde(default)]
     pub flatten: f64,
     #[serde(default = "default_raise_size")]

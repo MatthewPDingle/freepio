@@ -715,7 +715,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
         <label>3-bet % <input id="pfe-3b" type="number" value="${st.threebet}" min="0" max="100" step="0.5"></label>
         <label>fold to 3-bet % <input id="pfe-f3b" type="number" value="${st.fold_to_3bet}" min="0" max="100"></label>
         <label>squeeze % <input id="pfe-sq" type="number" value="${st.squeeze}" min="0" max="100" step="0.5"></label>
-        <label>position-blind <input id="pfe-flat" type="number" value="${st.flatten}" min="0" max="1" step="0.05"></label>
+        <label data-tip="Naivet\u00e9, 0\u20131. At 0 ranges are solver-shaped: positional, and ordered by playability (the equilibrium folds dominated hands like Q9o to raises but defends 53s). At 1 the player plays his cards: the same ranges from every seat, ordered by raw card appeal \u2014 high cards and any suited in, low suited junk out.">naivet\u00e9 <input id="pfe-flat" type="number" value="${st.flatten}" min="0" max="1" step="0.05"></label>
         <label>raise size <select id="pfe-size"><option value="min">min</option><option value="max">max</option><option value="jam">jam</option></select></label>
       </div>
       <div class="btn-row">
