@@ -783,6 +783,15 @@ textarea {
 #pfl-estimate.warn { color: #e0a33c; }
 .pfl-step { font-size: 10px; letter-spacing: .12em; color: var(--accent);
   margin: 12px 0 4px; font-weight: 600; }
+.pfl-prog { position: relative; height: 16px; margin-top: 8px;
+  background: var(--panel2); border: 1px solid var(--line2); border-radius: 3px;
+  overflow: hidden; }
+.pfl-prog i { position: absolute; inset: 0; width: 0%;
+  background: var(--accent-soft); border-right: 2px solid var(--accent);
+  transition: width .25s linear; }
+.pfl-prog span { position: relative; display: block; text-align: center;
+  font-size: 9px; line-height: 15px; letter-spacing: .06em;
+  color: var(--ink-dim); font-family: var(--font-data); }
 .btn.busy { opacity: .75; pointer-events: none; }
 .btn.busy::after {
   content: ''; display: inline-block; width: 10px; height: 10px;

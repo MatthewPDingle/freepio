@@ -701,6 +701,7 @@ initPreflopLab({
     ante: $('pfl-ante'), rakePct: $('pfl-rakepct'), rakeCap: $('pfl-rakecap'),
     limp: $('pfl-limp'), allin: $('pfl-allin'),
     build: $('pfl-build'), solve: $('pfl-solve'), stop: $('pfl-stopbtn'),
+    prog: $('pfl-prog'),
     buildInfo: $('pfl-buildinfo'), status: $('pfl-status'),
     ribbon: $('pfl-ribbon'), nodeTitle: $('pfl-nodetitle'),
     seats: $('pfl-seats'), rangeSeg: $('pfl-rangeseg'), grid: $('pfl-grid'),

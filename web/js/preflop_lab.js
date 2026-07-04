@@ -65,8 +65,8 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     positions: [],
     cells: [],      // persistent 13x13 cell divs (same markup as Browse)
     colors: [],
-    fillMode: 'normalized', // 'normalized' | 'range' | 'full' (as in Browse)
     rangeSeat: 0,   // whose arriving range the grid shows at terminals
+    lastState: null, // last solver state seen by poll (drives the progress bar)
     selected: null, // pinned [i, j]
     hover: null,
   };
@@ -96,13 +96,6 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     }
     m.addEventListener('mouseleave', () => { S.hover = null; renderDetail(); });
   })();
-  els.fillSeg.querySelectorAll('button').forEach(b =>
-    b.addEventListener('click', () => {
-      S.fillMode = b.dataset.f;
-      els.fillSeg.querySelectorAll('button').forEach(x =>
-        x.classList.toggle('active', x === b));
-      paintGrid();
-    }));
 
   // ----- config -----
   PRESETS.forEach((p, i) => {
@@ -151,21 +144,26 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     const borderline = e.ok &&
       (e.nodes > 0.9 * e.limit_nodes || e.arena_mb > 0.9 * e.limit_arena_mb);
     els.estimate.classList.toggle('warn', borderline);
+    const capsTip = `${caps}. The caps track FREE RAM, so they move as other apps use memory ` +
+      `(PREFLOP_MAX_NODES / PREFLOP_MAX_ARENA_MB env vars override). ` +
+      `Tree size multiplies: open sizes \u00d7 re-raises \u00d7 raise cap \u00d7 limps \u00d7 players.`;
+    const dot = t => ` <span class="info-dot" data-tip="${t}">?</span>`;
     if (e.ok && borderline) {
-      els.estimate.innerHTML =
-        `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 fits, <b>barely</b> \u26a0 (${caps} \u2014 ` +
-        `these caps track free RAM, so the build can still refuse if memory tightens; ` +
-        `close big apps or trim a size for headroom)`;
       els.estimate.classList.remove('bad');
+      els.estimate.innerHTML =
+        `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 fits, <b>barely</b> \u26a0` +
+        dot(capsTip + ' With this little headroom the build may still refuse if memory tightens \u2014 close big apps or trim a size.');
     } else if (e.ok) {
-      els.estimate.innerHTML =
-        `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${(+e.action_nodes).toLocaleString()} decisions \u00b7 ${mb} MB \u2014 fits \u2713 <span class="dim">(${caps})</span>`;
       els.estimate.classList.remove('bad');
+      els.estimate.innerHTML =
+        `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 fits \u2713` + dot(capsTip);
     } else {
-      els.estimate.innerHTML = e.truncated
-        ? `tree &gt; <b>${nodes}</b> nodes \u00b7 &gt; ${mb} MB <span class="dim">(stopped counting \u2014 hopelessly past the cap)</span> \u2014 ${caps}. Trim sizes, raises, or limps \u2717`
-        : `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 too big: ${caps}. Trim sizes, raises, or limps \u2717`;
       els.estimate.classList.add('bad');
+      els.estimate.innerHTML = (e.truncated
+        ? `tree &gt; <b>${nodes}</b> nodes \u00b7 &gt; ${mb} MB \u2014 too big \u2717`
+        : `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 too big \u2717`) +
+        dot((e.truncated ? 'Counting stopped early \u2014 hopelessly past the cap. ' : '') +
+          capsTip + ' Trim open sizes, re-raise multipliers, the raise cap, or limps.');
     }
   }
   window.addEventListener('focus', () => estSoon());
@@ -201,13 +199,49 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   }
 
   // ----- build / solve -----
+
+  // One progress bar serves both phases. Build progress is an estimate:
+  // expected node count from the size estimator divided by a build rate
+  // that self-calibrates from every real build (localStorage). Solve
+  // progress is real: iterations vs the requested maximum.
+  const SOLVE_ITERS = 3000;
+  const progFill = els.prog.querySelector('i');
+  const progLab = els.prog.querySelector('span');
+  function progressSet(pct, label) {
+    els.prog.classList.remove('hidden');
+    progFill.style.width = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
+    progLab.textContent = label;
+  }
+  function progressHide() {
+    els.prog.classList.add('hidden');
+  }
+
   async function buildGame() {
     const cfg = config();
     els.build.disabled = true;
-    els.build.classList.add('busy');
-    els.buildInfo.textContent = 'building… (the first build also computes the equity table, ~15 s)';
+    els.solve.disabled = true;
+    els.buildInfo.textContent = '';
+    let expected = 0;
+    try { expected = (await api.pfEstimate(cfg)).nodes || 0; } catch { /* build reports errors */ }
+    const eqCold = !localStorage.getItem('pfl-eq-built');
+    const rate = +localStorage.getItem('pfl-build-rate') || 150000; // nodes/s
+    const t0 = performance.now();
+    const tick = () => {
+      const secs = (performance.now() - t0) / 1000;
+      const pct = expected > 0 ? Math.min(94, (100 * secs * rate) / expected) : Math.min(94, secs * 12);
+      progressSet(pct, eqCold
+        ? 'building — the first run also computes the equity table (~15 s)…'
+        : `building ${expected.toLocaleString()} nodes · ~${Math.round(pct)}%`);
+    };
+    tick();
+    const timer = setInterval(tick, 150);
     try {
       const info = await api.pfBuild(cfg);
+      const secs = (performance.now() - t0) / 1000;
+      if (info.nodes > 20000 && secs > 0.2) {
+        localStorage.setItem('pfl-build-rate', String(Math.round(info.nodes / secs)));
+      }
+      localStorage.setItem('pfl-eq-built', '1');
       S.built = true;
       S.builtCfg = JSON.stringify(cfg);
       S.positions = cfg.positions;
@@ -215,17 +249,21 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       S.lineP = [];
       els.buildInfo.textContent =
         `${info.nodes.toLocaleString()} nodes · ${info.action_nodes.toLocaleString()} decision points · ${info.arena_mb.toFixed(0)} MB`;
+      progressSet(100, 'built ✓');
+      setTimeout(() => { if (S.lastState !== 'running') progressHide(); }, 900);
       refresh();
       startPolling();
       return true;
     } catch (e) {
       toast(e.message, true);
       els.buildInfo.textContent = '';
+      progressHide();
       updateEstimate(); // re-sync the size line with the caps that refused us
       return false;
     } finally {
+      clearInterval(timer);
       els.build.disabled = false;
-      els.build.classList.remove('busy');
+      els.solve.disabled = false;
     }
   }
   els.build.addEventListener('click', buildGame);
@@ -234,20 +272,21 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   // changed since the last build — one button does the right thing.
   els.solve.addEventListener('click', async () => {
     els.solve.disabled = true;
-    els.solve.classList.add('busy');
     try {
       if (!S.built || S.builtCfg !== JSON.stringify(config())) {
         if (!(await buildGame())) return;
       }
-      await api.pfSolve({ iterations: 3000, check_every: 50, target_gap: 0.005 });
+      progressSet(0, 'solving…');
+      await api.pfSolve({ iterations: SOLVE_ITERS, check_every: 50, target_gap: 0.005 });
       startPolling();
-    } catch (e) { toast(e.message, true); }
-    finally {
-      els.solve.disabled = false;
-      els.solve.classList.remove('busy');
-    }
+    } catch (e) { toast(e.message, true); progressHide(); }
+    finally { els.solve.disabled = false; }
   });
-  els.stop.addEventListener('click', () => api.pfStop().catch(() => {}));
+  els.stop.addEventListener('click', () => {
+    els.stop.disabled = true;
+    progLab.textContent = 'stopping…';
+    api.pfStop().catch(() => {});
+  });
   els.nodeTitle.textContent = 'pick a scenario (or tweak the settings) and hit SOLVE';
 
   function startPolling() {
@@ -273,6 +312,16 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     els.solve.textContent = st.state === 'done' || st.state === 'stopped' ? '3 · RE-SOLVE' : '3 · SOLVE';
     els.solve.classList.toggle('hidden', st.state === 'running');
     els.stop.classList.toggle('hidden', st.state !== 'running');
+    if (st.state === 'running') {
+      progressSet((100 * st.iteration) / SOLVE_ITERS,
+        `solving · iter ${st.iteration} / ${SOLVE_ITERS} · gap ${st.gap_total ? st.gap_total.toFixed(4) : '…'} bb`);
+    } else if (S.lastState === 'running') {
+      // a run just ended (target hit, max iterations, or STOP)
+      els.stop.disabled = false;
+      progressSet(100, st.state === 'done' ? 'solved ✓ (target gap reached or max iterations)' : 'stopped');
+      setTimeout(() => { if (S.lastState !== 'running') progressHide(); }, 1200);
+    }
+    S.lastState = st.state;
     if (st.iteration !== lastIter && S.built) {
       lastIter = st.iteration;
       refresh(); // strategies moved: repaint current node
@@ -517,14 +566,8 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     }
     if (!reachVec) return;
     const colors = S.colors;
-    let maxReach = 1e-9;
-    for (let h = 0; h < 169; h++) maxReach = Math.max(maxReach, reachVec[h] || 0);
-    const fillH = r => {
-      if (r <= 1e-9) return 0;
-      if (S.fillMode === 'full') return 1;
-      if (S.fillMode === 'range') return Math.min(1, r);
-      return Math.min(1, r / maxReach);
-    };
+    // bar height = the actual fraction of the hand's combos still held here
+    const fillH = r => (r <= 1e-9 ? 0 : Math.min(1, r));
     for (let i = 0; i < 13; i++) {
       for (let j = 0; j < 13; j++) {
         const cell = S.cells[i * 13 + j];
@@ -587,8 +630,11 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   }
 
   function renderLegend(v, colors) {
-    els.legend.innerHTML = v.actions.map((a, k) =>
-      `<span class="key"><i style="background:${colors[k]}"></i>${a.label}</span>`).join('');
+    els.legend.innerHTML =
+      `<span class="key dim">cell colors = ${v.actor_pos}'s action mix:</span>` +
+      v.actions.map((a, k) =>
+        `<span class="key"><i style="background:${colors[k]}"></i>${a.label}</span>`).join('') +
+      `<span class="key dim">\u00b7 bar height = share of the hand's combos still in range \u00b7 dark cell = hand no longer here</span>`;
   }
 
   return { refresh };

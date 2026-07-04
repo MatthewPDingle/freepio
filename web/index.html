@@ -218,6 +218,8 @@
           with postflop play priced by an equity-realization model (all-in
           terminals are model-exact). Multiway output is <b>an</b> equilibrium
           of the model, not gospel; the BR gap below is the convergence metric.
+          Any line that reaches the flop <b>heads-up</b> can be sent straight to
+          the postflop solver for an exact solve — ranges, pot and stack carry over.
         </p>
         <div class="pfl-step">1 · SET UP THE SCENARIO</div>
         <label class="pfl-row">Scenario <select id="pfl-preset"></select></label>
@@ -244,6 +246,7 @@
           <button id="pfl-solve" class="btn primary" data-tip="Step 3: run CFR on the built game. Builds first when needed.">3 · SOLVE</button>
           <button id="pfl-stopbtn" class="btn danger hidden">STOP</button>
         </div>
+        <div id="pfl-prog" class="pfl-prog hidden"><i></i><span></span></div>
         <div id="pfl-buildinfo" class="mono dim" style="font-size:11px;margin-top:6px"></div>
         <div id="pfl-status" class="mono dim" style="font-size:11px;margin-top:2px"></div>
       </section>
@@ -257,9 +260,6 @@
           data-tip="Send this heads-up flop spot to the postflop solver: both conditional ranges, pot and effective stack land in SETUP — pick a flop and solve for real.">
           SEND TO POSTFLOP →</button>
         <div class="pfl-gridbar hidden" id="pfl-fillseg">
-          <div class="seg">
-            <button data-f="normalized" class="active" data-tip="Bar height relative to the busiest hand in this range — best use of the cell space.">Normalized</button><button data-f="range" data-tip="Bar height = the actual fraction of the hand's combos still here.">Range</button><button data-f="full" data-tip="Ignore reach; every non-empty cell fills completely — just show the action colors.">Full</button>
-          </div>
           <div class="seg" id="pfl-rangeseg" data-tip="Whose arriving range the grid shows at this flop."></div>
           <span id="pfl-detail" class="mono dim"></span>
         </div>
