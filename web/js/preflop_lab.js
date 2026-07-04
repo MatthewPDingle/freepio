@@ -130,10 +130,18 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   applyPreset(PRESETS[0]);
 
   // ----- live tree-size estimate -----
+  let estSeq = 0;
   async function updateEstimate() {
+    const seq = ++estSeq;
     let e;
     try { e = await api.pfEstimate(config()); }
-    catch (err) { els.estimate.textContent = `\u26a0 ${err.message}`; els.estimate.classList.add('bad'); return; }
+    catch (err) {
+      if (seq !== estSeq) return; // superseded by a newer request
+      els.estimate.textContent = `\u26a0 ${err.message}`;
+      els.estimate.classList.add('bad');
+      return;
+    }
+    if (seq !== estSeq) return; // stale response: a newer one is coming
     const nodes = (+e.nodes).toLocaleString();
     const mb = e.arena_mb < 1 ? e.arena_mb.toFixed(1) : e.arena_mb.toFixed(0);
     const fmtBig = x => x >= 1e6 ? (x / 1e6).toFixed(1) + 'M'
@@ -223,6 +231,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     } catch (e) { toast(e.message, true); }
   });
   els.stop.addEventListener('click', () => api.pfStop().catch(() => {}));
+  els.nodeTitle.textContent = 'pick a scenario (or tweak the settings) and hit SOLVE';
 
   function startPolling() {
     if (S.polling) clearInterval(S.polling);
@@ -234,10 +243,17 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     let st;
     try { st = await api.pfStatus(); } catch { return; }
     if (!st.state) return;
-    const gaps = st.gaps && st.gaps.length
-      ? ` · BR gap ${st.gap_total.toFixed(4)} bb (${st.gaps.map(g => g.toFixed(3)).join(' / ')})`
-      : '';
+    let gaps = '';
+    if (st.gaps && st.gaps.length) {
+      gaps = st.gaps.length <= 2
+        ? ` · BR gap ${st.gap_total.toFixed(4)} bb (${st.gaps.map(g => g.toFixed(3)).join(' / ')})`
+        : ` · BR gap ${st.gap_total.toFixed(4)} bb (worst seat ${Math.max(...st.gaps).toFixed(3)})`;
+      els.status.dataset.tip =
+        'Best-response gap: how much each seat could gain by deviating (bb) — the convergence metric. ' +
+        st.gaps.map((g, i) => `${S.positions[i] || i}: ${g.toFixed(4)}`).join(' · ');
+    }
     els.status.textContent = `${st.state} · iter ${st.iteration}${gaps}`;
+    els.solve.textContent = st.state === 'done' || st.state === 'stopped' ? 'RE-SOLVE' : 'SOLVE';
     els.solve.classList.toggle('hidden', st.state === 'running');
     els.stop.classList.toggle('hidden', st.state !== 'running');
     if (st.iteration !== lastIter && S.built) {
@@ -381,9 +397,18 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
         `${v.actor_pos} rarely still holds here, filtered out by its own earlier actions ` +
         `(hover a cell for exact numbers).`;
     } else if (v.kind === 'fold_win') {
-      const w = v.positions[v.live.findIndex(x => x)];
-      els.nodeTitle.textContent = `everyone folded — ${w} takes ${v.pot.toFixed(1)} bb`;
-      hideGrid();
+      const wi = v.live.findIndex(x => x);
+      els.nodeTitle.textContent = `everyone folded — ${v.positions[wi]} takes ${v.pot.toFixed(1)} bb`;
+      // still worth seeing: the range the winner got through with
+      S.rangeSeat = wi;
+      els.rangeSeg.innerHTML = '';
+      els.grid.classList.remove('hidden');
+      els.fillSeg.classList.remove('hidden');
+      paintGrid();
+      renderDetail();
+      els.legend.innerHTML =
+        `<span class="key"><i style="background:#f28c26"></i>${v.positions[wi]}'s range when everyone folds — bar height = share of combos</span>`;
+      els.gridCap.innerHTML = '';
     } else {
       const live = v.positions.filter((_, i) => v.live[i]);
       els.nodeTitle.textContent =
@@ -412,6 +437,9 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       els.gridCap.innerHTML = '';
       if (v.exportable) {
         els.exportBtn.classList.remove('hidden');
+        els.gridCap.innerHTML =
+          'The grid shows each player\u2019s arriving range \u2014 exactly the conditional ' +
+          'ranges SEND TO POSTFLOP drops into SETUP, along with this pot and stack.';
       } else {
         // 3+ players see the flop: the postflop solver is heads-up only
         els.gridCap.innerHTML =
@@ -430,6 +458,9 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   }
 
   els.exportBtn.addEventListener('click', async () => {
+    if (lastIter < 1) {
+      return toast('solve the game first — until then every range is uniform', true);
+    }
     try {
       const ex = await api.pfExport(S.cursor);
       const steps = takenSteps(S.cursor.length);
@@ -464,7 +495,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     if (v.kind === 'action') {
       reachVec = v.reach;
       na = v.actions.length;
-    } else if (v.kind === 'pot_share') {
+    } else if (v.kind === 'pot_share' || v.kind === 'fold_win') {
       reachVec = (v.reaches_all || [])[S.rangeSeat] || null;
     }
     if (!reachVec) return;
@@ -510,7 +541,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   function renderDetail() {
     const v = S.view;
     const t = S.hover || S.selected; // pinned cell persists when the mouse leaves
-    const inRange = v && v.kind === 'pot_share';
+    const inRange = v && (v.kind === 'pot_share' || v.kind === 'fold_win');
     if (!v || (v.kind !== 'action' && !inRange) || !t) {
       els.detail.textContent = '';
       return;
@@ -523,7 +554,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       const r = ((v.reaches_all || [])[S.rangeSeat] || [])[idx] || 0;
       els.detail.textContent = r < 0.002
         ? `${lab} — not in ${pos}'s range here`
-        : `${lab} — ${(r * 100).toFixed(0)}% of ${pos}'s combos reach this flop`;
+        : `${lab} — ${(r * 100).toFixed(0)}% of ${pos}'s combos still held here`;
       return;
     }
     const reach = v.reach[idx];
