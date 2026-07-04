@@ -95,16 +95,11 @@ async function applyExportedSpot(ex) {
   $('cfg-stack').value = ex.eff_stack_bb;
   if (ex.rake_pct != null) $('cfg-rake').value = ex.rake_pct;
   if (ex.rake_cap != null) $('cfg-rakecap').value = ex.rake_cap;
-  $('setup-context').classList.remove('hidden');
-  $('setup-context-text').innerHTML =
-    `<b>From the Preflop Lab:</b> ${ex.name || `${ex.oop_pos} vs ${ex.ip_pos}`} \u2014 ` +
-    `ranges, pot ${ex.pot_bb}bb, stack ${ex.eff_stack_bb}bb` +
-    (ex.rake_pct ? `, rake ${ex.rake_pct}% capped ${ex.rake_cap}bb` : '') +
-    ` loaded. Pick a board, adjust sizes, BUILD TREE.`;
   editor.setPlayer(1);
   await editor.setWeightsFromText(ex.range_ip);
   editor.setPlayer(0);
   await editor.setWeightsFromText(ex.range_oop);
+  // the range tabs carry the positions from the lab: "BB · OOP" / "UTG · IP"
   const rtabs = document.querySelectorAll('.rtab');
   rtabs.forEach((x, i) => x.classList.toggle('active', i === 0));
   if (rtabs.length >= 2) {
@@ -112,7 +107,6 @@ async function applyExportedSpot(ex) {
     rtabs[1].textContent = `${ex.ip_pos} \u00b7 IP`;
   }
   showTab('setup');
-  toast(`${ex.oop_pos} vs ${ex.ip_pos} loaded: pot ${ex.pot_bb}bb, stack ${ex.eff_stack_bb}bb \u2014 pick a flop and BUILD TREE`);
 }
 
 // default starting ranges so the app is usable immediately
@@ -606,13 +600,6 @@ initPreflopLab({
     refreshPresetDropdown();
     await applyExportedSpot(ex);
   },
-});
-
-$('setup-context-clear').addEventListener('click', () => {
-  state.pendingPreflop = null;
-  $('setup-context').classList.add('hidden');
-  const rtabs = document.querySelectorAll('.rtab');
-  if (rtabs.length >= 2) { rtabs[0].textContent = 'OOP'; rtabs[1].textContent = 'IP'; }
 });
 
 // restore last config if present
