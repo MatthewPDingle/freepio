@@ -82,7 +82,82 @@ SPR, suited/connected > offsuit-junk at equal equity.
 
 ---
 
-## 2. Raw/static realization toggle in the lab UI (tiny)
+## 2. Preflop player profiles — model & exploit real opponents (NEXT UP)
+
+**Goal (designed 2026-07-04 with Matthew; his examples are the spec).** Model
+reads like "VPIPs every hand", "OMC who only raises AA/KK at the max open
+size", "never 3-bets" as per-SEAT behavioral profiles in the Preflop Lab,
+lock seats to them, and exploit: re-solve so the table adapts, or freeze all
+non-hero seats and solve hero's seat = a personal max-exploitation chart.
+
+**Core design.**
+- Locks are per SEAT, not per node: a profile compiles into behavior at every
+  node where that seat acts. Situation buckets (stored per node at build,
+  1 byte): unopened / vs limp(s) / vs raise / vs raise+caller(s) (squeeze —
+  explicitly requested) / vs 3-bet+.
+- Seat modes in the engine: live (normal CFR) | frozen (plays current average
+  strategy, no updates — seat-level "lock as solved") | ruled (strategy from
+  profile). Frozen/ruled need NO lock tables: traversal sources sigma
+  differently and skips that seat's regret/strat updates (zero memory).
+  Precedence later: node point-locks > profile > solver.
+- Profiles are STAT-DRIVEN (HUD vocabulary): VPIP, PFR, 3bet%, fold-to-3bet%,
+  squeeze%, limp-behind. Archetype presets as stat vectors: Whale 60/8/2,
+  Nit/OMC 12/8/1, TAG 24/19/7, LAG 30/25/11, Maniac 55/40/20, Station.
+- Range generation = EQUILIBRIUM DISTORTION (Matthew's explicit pick over a
+  static ranking): baseline = the current UNLOCKED solve's average strategy.
+  Per seat and bucket, summarize per-class propensities (reach-weighted over
+  the bucket's nodes): continue prob c_h, raise prob r_h. Generate a
+  VPIP-X profile by ranking classes by c_h (tie-break EV) and filling
+  cumulative combo mass to X% (boundary class gets fractional weight);
+  within the continuing range, fill the raising slice to the PFR-analog by
+  r_h rank; VPIP−PFR gap = the limp/call slice (this alone produces
+  passive vs aggressive shapes). Same construction per bucket from its own
+  stats (3bet%, fold-to-3bet → survive-share of the opening range, etc.).
+  Raise-range carries a SIZE CHOICE (min/max/jam; OMC preset = max — per
+  Matthew). Positional shape is inherited (each seat distorts its own
+  equilibrium); add a "position blind" 0..1 dial that interpolates toward
+  the seat-average range for true fish. CONSEQUENCE: generation requires a
+  baseline solve — UI prompts to solve unlocked first (natural workflow:
+  build → solve → profile seats → re-solve/exploit).
+- Implied-stat readback after generate/edit ("this profile ≈ 58/6/1, folds
+  to 3-bet 22%") so the model can be checked against the HUD numbers.
+- Free wins to preserve: ribbon chips show locked seats' real frequencies
+  automatically (strategy source drives display); SEND TO POSTFLOP exports
+  arriving ranges that reflect profiles (whale's wide flop range flows into
+  postflop study); postflop EXPLOIT mode continues the pipeline.
+
+**Phases.**
+- P1 engine: seat modes, bucket tagging, profile→sigma compilation, tests
+  with behavioral anchors (vs never-3-bettor hero opens widen; facing OMC
+  raise hero folds QQ; vs whale hero's bluffs die and thin value grows).
+- P2 generator: equilibrium-distortion synthesis (server-side Rust),
+  archetypes, implied-stat readback; profiles stored as JSON in
+  saves/profiles/ (travels via git, unlike localStorage). Interim rule
+  editing via range text per bucket action.
+- P3 UI: profile editor modal (stats row → GENERATE → bucket tabs →
+  multi-action painting grid: palette fold/limp-call/raise@size/jam painted
+  per class with mix weights — extend the SETUP RangeEditor), seat lock
+  badges, ribbon lock icons, "N seats profiled" status note.
+- P4 hero mode ("solve as SEAT: freeze everyone else" → CFR vs fixed
+  opponents converges to hero's max exploit) + instant per-seat BR bleed
+  readout ("this profile loses X bb/hand") via the existing mode-2 pass.
+- P5: GPU support for seat modes (after preflop kernels are
+  desktop-validated; until then profile solves fall back to CPU with a
+  status note), node-level point-locks for spot-specific reads.
+
+## 2b. Postflop player profiles (LATER — explicit Matthew request)
+
+The same player model continued past the flop: postflop HUD stats (c-bet%,
+fold-to-c-bet, WTSD, raise-c-bet...) auto-generate POSTFLOP node locks in a
+spot exported from the lab — e.g. c-bet 80% → Range-lock villain's flop bet
+frequency; fold-to-c-bet 60% → lock his facing-bet fold frequency; then
+postflop EXPLOIT mode (already built) reads off the punishment. Design when
+preflop profiles (item 2) are in use: the profile JSON should carry a
+postflop-stats section from day one so one player file describes the whole
+hand. Depends on: item 2's profile format; the postflop lock API
+(POST /api/lock, Range mode) already suffices mechanically.
+
+## 3. Raw/static realization toggle in the lab UI (tiny)
 
 `web/js/preflop_lab.js` `config()` hardcodes `realization: 'static'`. Add a
 select (static / raw — later calibrated, see item 1) so model sensitivity
@@ -90,7 +165,7 @@ can be A/B'd from the UI. If a decision survives both, the model isn't
 deciding it. ~20 lines (config field, dropdown in `index.html` view-preflop
 panel, els wiring in `app.js`).
 
-## 3. Tier 2 — heads-up full-game preflop solver (desktop-class project)
+## 4. Tier 2 — heads-up full-game preflop solver (desktop-class project)
 
 True preflop solving for 2 players (SB vs BB): preflop street + flop chance
 node fanning into a weighted canonical-flop subset (~50–95 boards), each
@@ -103,14 +178,14 @@ chance layer, and memory planning (each flop subtree ≈ a current spot;
 ×95 boards → needs small per-street size menus + the 128 GB desktop).
 Validate against item 1's data and published HU charts.
 
-## 4. UI consolidation — Browse as the only screen (design agreed 2026-07-02)
+## 5. UI consolidation — Browse as the only screen (design agreed 2026-07-02)
 
 SETUP → GTO Wizard-style modal (tabs: New spot / Library of saves via
 `/api/saves`); SOLVE → header strip + collapsible convergence drawer
 (header solve buttons already exist); tabs removed. Pure frontend. Phase 2:
 merge the preflop study panel and PREFLOP LAB ribbon into Browse's ribbon.
 
-## 5. Smaller items
+## 6. Smaller items
 
 - **Preflop CUDA: VALIDATE ON THE DESKTOP** — implemented 2026-07-04
   (`preflop/gpu.rs` + `preflop/kernels.cu`: level-synchronous CFR
