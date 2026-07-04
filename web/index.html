@@ -241,9 +241,9 @@
         </div>
         <div id="pfl-estimate" class="mono dim" style="font-size:11px;margin:6px 0 2px"
           data-tip="Live tree size for the settings above, computed before you build. The limits are derived from THIS machine's available RAM (arenas may take ~40% of it; PREFLOP_MAX_NODES / PREFLOP_MAX_ARENA_MB env override). Branching multiplies: sizes x raise cap x limps x players."></div>
-        <div class="btn-row">
+        <div class="pfl-btncol">
           <button id="pfl-build" class="btn" data-tip="Step 2: build the game tree for the settings above (SOLVE does this automatically if you skip it).">2 · BUILD GAME</button>
-          <button id="pfl-solve" class="btn primary" data-tip="Step 3: run CFR on the built game. Builds first when needed.">3 · SOLVE</button>
+          <button id="pfl-solve" class="btn primary" data-tip="Step 3: run CFR on the built game. Builds first when needed. Stops early at the target accuracy (BR gap 0.005 bb) or after 3000 iterations.">3 · SOLVE</button>
           <button id="pfl-stopbtn" class="btn danger hidden">STOP</button>
         </div>
         <div id="pfl-prog" class="pfl-prog hidden"><i></i><span></span></div>
@@ -261,7 +261,6 @@
           SEND TO POSTFLOP →</button>
         <div class="pfl-gridbar hidden" id="pfl-fillseg">
           <div class="seg" id="pfl-rangeseg" data-tip="Whose arriving range the grid shows at this flop."></div>
-          <span id="pfl-detail" class="mono dim"></span>
         </div>
         <div id="pfl-grid" class="matrix browse hidden"></div>
         <div id="pfl-gridcap" class="dim" style="font-size:10px;line-height:1.5;margin-top:6px;max-width:720px"></div>

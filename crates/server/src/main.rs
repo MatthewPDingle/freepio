@@ -723,11 +723,19 @@ async fn pf_solve(
             let mut s = solver.lock().unwrap();
             s.iterate();
             done += 1;
+            let iteration = s.iteration;
             let checkpoint = done % check == 0 || done >= max;
-            if checkpoint {
+            if !checkpoint {
+                // publish the live iteration every pass so the UI's counter,
+                // progress bar and hand grid move continuously; the (costly)
+                // best-response gap still runs only at checkpoints
+                drop(s);
+                status.lock().unwrap().iteration = iteration;
+                continue;
+            }
+            {
                 let gaps = s.br_gaps();
                 let evs = s.evs();
-                let iteration = s.iteration;
                 drop(s);
                 let total: f64 = gaps.iter().sum();
                 let mut st = status.lock().unwrap();

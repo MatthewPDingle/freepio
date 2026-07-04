@@ -778,7 +778,8 @@ textarea {
 .pfl-seat.cur { border-color: var(--accent); color: var(--ink); }
 #pfl-grid { max-width: 720px; }
 .pfl-gridbar { display: flex; align-items: center; gap: 14px; margin: 2px 0 6px; }
-#pfl-detail { font-size: 10px; }
+.pfl-btncol { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.pfl-btncol .btn { width: 100%; }
 #pfl-estimate.bad { color: #e8484c; }
 #pfl-estimate.warn { color: #e0a33c; }
 .pfl-step { font-size: 10px; letter-spacing: .12em; color: var(--accent);

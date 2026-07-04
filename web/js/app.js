@@ -706,7 +706,7 @@ initPreflopLab({
     ribbon: $('pfl-ribbon'), nodeTitle: $('pfl-nodetitle'),
     seats: $('pfl-seats'), rangeSeg: $('pfl-rangeseg'), grid: $('pfl-grid'),
     legend: $('pfl-legend'), gridCap: $('pfl-gridcap'), exportBtn: $('pfl-export'),
-    fillSeg: $('pfl-fillseg'), detail: $('pfl-detail'), estimate: $('pfl-estimate'),
+    fillSeg: $('pfl-fillseg'), estimate: $('pfl-estimate'),
   },
   toast,
   gotoSetup: () => showTab('setup'),

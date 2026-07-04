@@ -67,12 +67,12 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     colors: [],
     rangeSeat: 0,   // whose arriving range the grid shows at terminals
     lastState: null, // last solver state seen by poll (drives the progress bar)
-    selected: null, // pinned [i, j]
-    hover: null,
+    gap0: null,      // first measured BR gap of the current run (progress scale)
   };
 
-  // Browse-identical matrix: same .cell markup/classes, hover shows the
-  // detail strip, click pins a cell.
+  // Browse-identical matrix: same .cell markup/classes; each cell carries a
+  // data-tip with its exact numbers (the app tooltip system is delegated, so
+  // updating the attribute on repaint is all it takes).
   (function buildGrid() {
     const m = els.grid;
     m.innerHTML = '';
@@ -83,18 +83,10 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
         cell.innerHTML =
           `<div class="bars"></div><div class="fill"></div>` +
           `<div class="tag">${cellInfo(i, j).label}</div><div class="sub"></div>`;
-        cell.addEventListener('click', () => {
-          S.selected = S.selected && S.selected[0] === i && S.selected[1] === j
-            ? null : [i, j];
-          paintGrid();
-          renderDetail();
-        });
-        cell.addEventListener('mouseenter', () => { S.hover = [i, j]; renderDetail(); });
         m.appendChild(cell);
         S.cells.push(cell);
       }
     }
-    m.addEventListener('mouseleave', () => { S.hover = null; renderDetail(); });
   })();
 
   // ----- config -----
@@ -249,9 +241,10 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       S.lineP = [];
       els.buildInfo.textContent =
         `${info.nodes.toLocaleString()} nodes · ${info.action_nodes.toLocaleString()} decision points · ${info.arena_mb.toFixed(0)} MB`;
-      progressSet(100, 'built ✓');
-      setTimeout(() => { if (S.lastState !== 'running') progressHide(); }, 900);
-      refresh();
+      progressSet(100, 'built ✓ — SOLVE to fill in the strategies');
+      setTimeout(() => { if (S.lastState !== 'running') progressHide(); }, 1500);
+      lastIter = 0;
+      clearRightPanel(); // uniform pre-solve strategies aren't worth showing
       startPolling();
       return true;
     } catch (e) {
@@ -287,7 +280,6 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     progLab.textContent = 'stopping…';
     api.pfStop().catch(() => {});
   });
-  els.nodeTitle.textContent = 'pick a scenario (or tweak the settings) and hit SOLVE';
 
   function startPolling() {
     if (S.polling) clearInterval(S.polling);
@@ -313,8 +305,15 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     els.solve.classList.toggle('hidden', st.state === 'running');
     els.stop.classList.toggle('hidden', st.state !== 'running');
     if (st.state === 'running') {
-      progressSet((100 * st.iteration) / SOLVE_ITERS,
-        `solving · iter ${st.iteration} / ${SOLVE_ITERS} · gap ${st.gap_total ? st.gap_total.toFixed(4) : '…'} bb`);
+      if (S.lastState !== 'running') S.gap0 = null;
+      if (S.gap0 == null && st.gap_total > 0) S.gap0 = st.gap_total;
+      // progress = the better of iteration count and log-scale gap convergence
+      // (gap 0.005 bb is the finish line; iterations are the safety cap)
+      const gapProg = S.gap0 > 0.005 && st.gap_total > 0
+        ? Math.log(S.gap0 / st.gap_total) / Math.log(S.gap0 / 0.005) : 0;
+      const pct = 100 * Math.max(st.iteration / SOLVE_ITERS, Math.min(1, Math.max(0, gapProg)));
+      progressSet(pct,
+        `solving · iter ${st.iteration}/${SOLVE_ITERS} · gap ${st.gap_total > 0 ? st.gap_total.toFixed(4) : '…'} → target 0.0050 bb`);
     } else if (S.lastState === 'running') {
       // a run just ended (target hit, max iterations, or STOP)
       els.stop.disabled = false;
@@ -333,8 +332,17 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
   }
 
   // ----- node navigation / rendering -----
+  function clearRightPanel() {
+    els.ribbon.innerHTML = '';
+    els.nodeTitle.textContent = '';
+    els.seats.innerHTML = '';
+    els.exportBtn.classList.add('hidden');
+    hideGrid();
+  }
+
   async function refresh() {
     if (!S.built) return;
+    if (lastIter < 1) { clearRightPanel(); return; } // nothing meaningful before solving
     try {
       const needLine = S.cursor.length !== S.lineP.length;
       const [view, lineView] = await Promise.all([
@@ -455,7 +463,6 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       els.grid.classList.remove('hidden');
       els.fillSeg.classList.remove('hidden');
       paintGrid();
-      renderDetail();
       renderLegend(v, colors);
       els.gridCap.innerHTML =
         `Grid = <b>${v.actor_pos}</b>'s play with every starting hand AT THIS POINT. ` +
@@ -471,7 +478,6 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       els.grid.classList.remove('hidden');
       els.fillSeg.classList.remove('hidden');
       paintGrid();
-      renderDetail();
       els.legend.innerHTML =
         `<span class="key"><i style="background:#f28c26"></i>${v.positions[wi]}'s range when everyone folds — bar height = share of combos</span>`;
       els.gridCap.innerHTML = '';
@@ -497,7 +503,6 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       els.grid.classList.remove('hidden');
       els.fillSeg.classList.remove('hidden');
       paintGrid();
-      renderDetail();
       els.legend.innerHTML =
         `<span class="key"><i style="background:#f28c26"></i>${v.positions[S.rangeSeat]}'s arriving range — bar height = share of that hand's combos reaching this flop</span>`;
       els.gridCap.innerHTML = '';
@@ -544,7 +549,6 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     els.grid.classList.add('hidden');
     els.fillSeg.classList.add('hidden');
     els.rangeSeg.innerHTML = '';
-    els.detail.textContent = '';
     els.legend.innerHTML = '';
     els.gridCap.innerHTML = '';
   }
@@ -589,45 +593,24 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
         bars.style.height = `${(fillH(reach) * 100).toFixed(1)}%`;
         bars.style.opacity = reach > 1e-9 ? 1 : 0;
         cell.classList.toggle('empty', reach < 0.002);
-        cell.classList.toggle('selected',
-          !!(S.selected && S.selected[0] === i && S.selected[1] === j));
+        const lab = cellInfo(i, j).label;
+        if (v.kind === 'action') {
+          cell.dataset.tip = reach < 0.002
+            ? `${lab} — ${v.actor_pos} almost never holds this here`
+            : `${lab} — ` + v.actions.map((a, k) =>
+                `${a.label} ${(v.strategy[k * 169 + idx] * 100).toFixed(1)}%`).join(' · ') +
+              (reach < 0.995 ? ` · ${(reach * 100).toFixed(0)}% of combos still in range` : '');
+        } else {
+          const pos = v.positions[S.rangeSeat];
+          cell.dataset.tip = reach < 0.002
+            ? `${lab} — not in ${pos}'s range here`
+            : `${lab} — ${(reach * 100).toFixed(0)}% of ${pos}'s combos still held here`;
+        }
         cell.querySelector('.sub').textContent = '';
       }
     }
   }
 
-  /** Detail strip for the hovered (or pinned) cell: exact action mix + how
-   *  much of the class still reaches this node. */
-  function renderDetail() {
-    const v = S.view;
-    const t = S.hover || S.selected; // pinned cell persists when the mouse leaves
-    const inRange = v && (v.kind === 'pot_share' || v.kind === 'fold_win');
-    if (!v || (v.kind !== 'action' && !inRange) || !t) {
-      els.detail.textContent = '';
-      return;
-    }
-    const [i, j] = t;
-    const idx = (12 - i) * 13 + (12 - j);
-    const lab = cellInfo(i, j).label;
-    if (inRange) {
-      const pos = v.positions[S.rangeSeat];
-      const r = ((v.reaches_all || [])[S.rangeSeat] || [])[idx] || 0;
-      els.detail.textContent = r < 0.002
-        ? `${lab} — not in ${pos}'s range here`
-        : `${lab} — ${(r * 100).toFixed(0)}% of ${pos}'s combos still held here`;
-      return;
-    }
-    const reach = v.reach[idx];
-    if (reach < 0.002) {
-      els.detail.textContent = `${lab} — ${v.actor_pos} almost never holds this here`;
-      return;
-    }
-    const mix = v.actions
-      .map((a, k) => `${a.label} ${(v.strategy[k * 169 + idx] * 100).toFixed(1)}%`)
-      .join(' · ');
-    els.detail.textContent =
-      `${lab} — ${mix}` + (reach < 0.995 ? ` · ${(reach * 100).toFixed(0)}% of combos reach` : '');
-  }
 
   function renderLegend(v, colors) {
     els.legend.innerHTML =
