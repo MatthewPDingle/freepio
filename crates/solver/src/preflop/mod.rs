@@ -531,6 +531,29 @@ impl PreflopSolver {
         gaps
     }
 
+    /// Best-response gaps AND average-strategy EVs in one pass per player
+    /// (the separate `evs()` would repeat the average traversal — checkpoint
+    /// cost matters on big trees, where this pass is the visible "pause").
+    pub fn gaps_and_evs(&mut self) -> (Vec<f64>, Vec<f64>) {
+        let mut gaps = Vec::with_capacity(self.n);
+        let mut evs = Vec::with_capacity(self.n);
+        for p in 0..self.n {
+            let mut reaches = self.root_reaches();
+            let br = self.traverse(0, p, &mut reaches, 2);
+            let mut reaches = self.root_reaches();
+            let avg = self.traverse(0, p, &mut reaches, 1);
+            let (mut g, mut v) = (0f64, 0f64);
+            for h in 0..NUM_CLASSES {
+                let w = class_prob(h) as f64;
+                g += w * (br[h] - avg[h]) as f64;
+                v += w * avg[h] as f64;
+            }
+            gaps.push(g);
+            evs.push(v);
+        }
+        (gaps, evs)
+    }
+
     /// EV per player (bb) under the average strategy profile.
     pub fn evs(&mut self) -> Vec<f64> {
         (0..self.n)

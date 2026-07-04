@@ -41,6 +41,10 @@ struct PreflopSession {
 struct PreflopStatus {
     /// "idle" | "running" | "done" | "stopped"
     state: String,
+    /// While running: "iterating" or "measuring" (the best-response
+    /// accuracy pass — long on big trees; the UI explains the pause).
+    #[serde(default)]
+    phase: String,
     iteration: u32,
     /// Per-player best-response gaps (bb) and their sum — the convergence
     /// metric for the preflop model (multiway has no exploitability proper).
@@ -730,16 +734,25 @@ async fn pf_solve(
                 // progress bar and hand grid move continuously; the (costly)
                 // best-response gap still runs only at checkpoints
                 drop(s);
-                status.lock().unwrap().iteration = iteration;
+                let mut st = status.lock().unwrap();
+                st.iteration = iteration;
+                st.phase = "iterating".into();
                 continue;
             }
             {
-                let gaps = s.br_gaps();
-                let evs = s.evs();
+                // announce the accuracy pass BEFORE it runs: on big trees it
+                // holds the solver for a while and the UI should say so
+                {
+                    let mut st = status.lock().unwrap();
+                    st.iteration = iteration;
+                    st.phase = "measuring".into();
+                }
+                let (gaps, evs) = s.gaps_and_evs();
                 drop(s);
                 let total: f64 = gaps.iter().sum();
                 let mut st = status.lock().unwrap();
                 st.iteration = iteration;
+                st.phase = "iterating".into();
                 st.gaps = gaps;
                 st.gap_total = total;
                 st.evs = evs;

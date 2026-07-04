@@ -231,11 +231,13 @@
         <div id="pfl-estimate" class="mono dim" style="font-size:11px;margin:6px 0 2px"
           data-tip="Live tree size for the settings above, computed before you build. The limits are derived from THIS machine's available RAM (arenas may take ~40% of it; PREFLOP_MAX_NODES / PREFLOP_MAX_ARENA_MB env override). Branching multiplies: sizes x raise cap x limps x players."></div>
         <div class="pfl-btncol">
-          <button id="pfl-build" class="btn" data-tip="Step 2: build the game tree for the settings above (SOLVE does this automatically if you skip it).">2 · BUILD GAME</button>
-          <button id="pfl-solve" class="btn primary" data-tip="Step 3: run CFR on the built game. Builds first when needed. Stops early at the target accuracy (BR gap 0.005 bb) or after 3000 iterations.">3 · SOLVE</button>
+          <div class="pfl-step">2 · BUILD THE GAME</div>
+          <button id="pfl-build" class="btn" data-tip="Build the game tree for the settings above (SOLVE does this automatically if you skip it).">BUILD GAME</button>
+          <div class="pfl-step">3 · SOLVE</div>
+          <button id="pfl-solve" class="btn primary" data-tip="Run CFR on the built game; builds first when needed. Stops as soon as the accuracy target is reached (total best-response gap under 0.005 bb) — the 3000-iteration maximum is only a safety cap, not the destination.">SOLVE</button>
           <button id="pfl-stopbtn" class="btn danger hidden">STOP</button>
         </div>
-        <div id="pfl-prog" class="pfl-prog hidden"><i></i><span></span></div>
+        <div id="pfl-prog" class="pfl-prog hidden" data-tip="Progress toward the accuracy target (best-response gap 0.005 bb), measured every 50 iterations — on big games that measurement itself takes a while and the bar says 'measuring accuracy' during it. Solving stops at the target or at the 3000-iteration safety cap, whichever comes first."><i></i><span></span></div>
         <div id="pfl-buildinfo" class="mono dim" style="font-size:11px;margin-top:6px"></div>
         <div id="pfl-status" class="mono dim" style="font-size:11px;margin-top:2px"></div>
         <div class="pfl-step">4 · SET UP THE PREFLOP ACTION</div>

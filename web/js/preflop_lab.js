@@ -68,6 +68,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     rangeSeat: 0,   // whose arriving range the grid shows at terminals
     lastState: null, // last solver state seen by poll (drives the progress bar)
     gap0: null,      // first measured BR gap of the current run (progress scale)
+    runPct: 0,       // monotonic progress within the current run
   };
 
   // Browse-identical matrix: same .cell markup/classes; each cell carries a
@@ -305,15 +306,26 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     els.solve.classList.toggle('hidden', st.state === 'running');
     els.stop.classList.toggle('hidden', st.state !== 'running');
     if (st.state === 'running') {
-      if (S.lastState !== 'running') S.gap0 = null;
+      if (S.lastState !== 'running') { S.gap0 = null; S.runPct = 0; }
       if (S.gap0 == null && st.gap_total > 0) S.gap0 = st.gap_total;
-      // progress = the better of iteration count and log-scale gap convergence
-      // (gap 0.005 bb is the finish line; iterations are the safety cap)
+      // Progress is convergence toward the 0.005 bb gap target (log scale),
+      // with the iteration cap as a floor; monotonic within a run. The 3000
+      // maximum is a safety net, not the destination — most solves stop at
+      // the target long before it.
       const gapProg = S.gap0 > 0.005 && st.gap_total > 0
         ? Math.log(S.gap0 / st.gap_total) / Math.log(S.gap0 / 0.005) : 0;
-      const pct = 100 * Math.max(st.iteration / SOLVE_ITERS, Math.min(1, Math.max(0, gapProg)));
-      progressSet(pct,
-        `solving · iter ${st.iteration}/${SOLVE_ITERS} · gap ${st.gap_total > 0 ? st.gap_total.toFixed(4) : '…'} → target 0.0050 bb`);
+      S.runPct = Math.max(S.runPct,
+        100 * Math.max(st.iteration / SOLVE_ITERS, Math.min(1, Math.max(0, gapProg))));
+      let label;
+      if (st.phase === 'measuring') {
+        label = `iter ${st.iteration} · measuring accuracy (a full best-response pass — big games pause here)…`;
+      } else if (st.gap_total > 0) {
+        label = `solving · iter ${st.iteration} · gap ${st.gap_total.toFixed(4)} → target 0.0050 bb`;
+      } else {
+        const nextCheck = Math.ceil((st.iteration + 1) / 50) * 50;
+        label = `solving · iter ${st.iteration} · first accuracy check at iter ${nextCheck}…`;
+      }
+      progressSet(S.runPct, label);
     } else if (S.lastState === 'running') {
       // a run just ended (target hit, max iterations, or STOP)
       els.stop.disabled = false;
