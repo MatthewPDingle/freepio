@@ -237,7 +237,7 @@
           <label class="chk"><input id="pfl-allin" type="checkbox"> all-in option</label>
         </div>
         <div id="pfl-estimate" class="mono dim" style="font-size:11px;margin:6px 0 2px"
-          data-tip="Live tree size for the settings above, computed before you build. Limits: 400k nodes / 480 MB of solver arrays by default (PREFLOP_MAX_NODES / PREFLOP_MAX_ARENA_MB env to raise). Branching multiplies: sizes x raise cap x limps x players."></div>
+          data-tip="Live tree size for the settings above, computed before you build. The limits are derived from THIS machine's available RAM (arenas may take ~40% of it; PREFLOP_MAX_NODES / PREFLOP_MAX_ARENA_MB env override). Branching multiplies: sizes x raise cap x limps x players."></div>
         <div class="btn-row">
           <button id="pfl-build" class="btn">BUILD GAME</button>
           <button id="pfl-solve" class="btn primary">SOLVE</button>
@@ -253,7 +253,6 @@
           <span id="pfl-pot" class="mono dim"></span>
         </div>
         <div id="pfl-seats"></div>
-        <div id="pfl-actions"></div>
         <button id="pfl-export" class="btn primary hidden"
           data-tip="Send this heads-up flop spot to the postflop solver: both conditional ranges, pot and effective stack land in SETUP — pick a flop and solve for real.">
           SEND TO POSTFLOP →</button>

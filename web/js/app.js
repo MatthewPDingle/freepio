@@ -703,7 +703,7 @@ initPreflopLab({
     build: $('pfl-build'), solve: $('pfl-solve'), stop: $('pfl-stopbtn'),
     buildInfo: $('pfl-buildinfo'), status: $('pfl-status'),
     ribbon: $('pfl-ribbon'), nodeTitle: $('pfl-nodetitle'), pot: $('pfl-pot'),
-    seats: $('pfl-seats'), actions: $('pfl-actions'), grid: $('pfl-grid'),
+    seats: $('pfl-seats'), grid: $('pfl-grid'),
     legend: $('pfl-legend'), gridCap: $('pfl-gridcap'), exportBtn: $('pfl-export'),
     fillSeg: $('pfl-fillseg'), detail: $('pfl-detail'), estimate: $('pfl-estimate'),
   },

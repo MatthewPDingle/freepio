@@ -581,6 +581,18 @@ pub struct PActionFreq {
     pub freq: f32,
 }
 
+/// One node along the walked line, for the Browse-style action ribbon:
+/// every available action with its frequency, plus which one was taken.
+#[derive(Debug, Clone, Serialize)]
+pub struct PfHistoryStep {
+    /// "action" | "fold_win" | "pot_share"
+    pub kind: String,
+    pub actor_pos: String,
+    pub pot: f64,
+    pub actions: Vec<PActionFreq>,
+    pub chosen: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PreflopNodeView {
     /// "action" | "fold_win" | "pot_share"
@@ -600,6 +612,8 @@ pub struct PreflopNodeView {
     pub reach: Option<Vec<f32>>,
     /// pot_share with exactly two live players: exportable to the postflop solver.
     pub exportable: bool,
+    /// One entry per node along the path, plus the current node (chosen=None).
+    pub history: Vec<PfHistoryStep>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spr: Option<f64>,
 }
@@ -615,44 +629,91 @@ pub struct PreflopExport {
 }
 
 impl PreflopSolver {
-    pub fn node_view(&self, path: &[usize]) -> Result<PreflopNodeView, String> {
-        let (node, reaches) = self.walk(path)?;
+    /// Reach-weighted aggregate frequency of each action at `node`.
+    fn action_freqs(&self, node: usize, reaches: &[Vec<f32>]) -> Vec<PActionFreq> {
         let nd = &self.nodes[node];
-        let live: Vec<bool> = (0..self.n).map(|i| nd.live & (1 << i) != 0).collect();
-        let kind = match nd.kind {
+        let actor = nd.actor as usize;
+        let sigma = self.average_strategy(node);
+        let na = nd.actions.len();
+        let mut tot = 0f64;
+        let mut freqs = vec![0f64; na];
+        for h in 0..NUM_CLASSES {
+            let w = reaches[actor][h] as f64;
+            tot += w;
+            for a in 0..na {
+                freqs[a] += w * sigma[a * NUM_CLASSES + h] as f64;
+            }
+        }
+        nd.actions
+            .iter()
+            .enumerate()
+            .map(|(a, act)| PActionFreq {
+                label: act.label.clone(),
+                kind: act.kind.clone(),
+                to: act.to,
+                freq: if tot > 1e-12 { (freqs[a] / tot) as f32 } else { 0.0 },
+            })
+            .collect()
+    }
+
+    fn kind_str(kind: u8) -> String {
+        match kind {
             KIND_ACTION => "action",
             KIND_FOLD_WIN => "fold_win",
             _ => "pot_share",
         }
-        .to_string();
+        .to_string()
+    }
+
+    pub fn node_view(&self, path: &[usize]) -> Result<PreflopNodeView, String> {
+        // walk the path, capturing a ribbon entry at every node passed
+        let mut node = 0usize;
+        let mut reaches = self.root_reaches();
+        let mut history: Vec<PfHistoryStep> = Vec::with_capacity(path.len() + 1);
+        for &a in path {
+            let nd = &self.nodes[node];
+            if nd.kind != KIND_ACTION || a >= nd.actions.len() {
+                return Err("bad path".into());
+            }
+            history.push(PfHistoryStep {
+                kind: Self::kind_str(nd.kind),
+                actor_pos: self.cfg.positions[nd.actor as usize].clone(),
+                pot: nd.pot,
+                actions: self.action_freqs(node, &reaches),
+                chosen: Some(a),
+            });
+            let sigma = self.average_strategy(node);
+            let actor = nd.actor as usize;
+            for h in 0..NUM_CLASSES {
+                reaches[actor][h] *= sigma[a * NUM_CLASSES + h];
+            }
+            node = self.child(node, a);
+        }
+        {
+            let nd = &self.nodes[node];
+            history.push(PfHistoryStep {
+                kind: Self::kind_str(nd.kind),
+                actor_pos: if nd.kind == KIND_ACTION {
+                    self.cfg.positions[nd.actor as usize].clone()
+                } else {
+                    String::new()
+                },
+                pot: nd.pot,
+                actions: if nd.kind == KIND_ACTION {
+                    self.action_freqs(node, &reaches)
+                } else {
+                    Vec::new()
+                },
+                chosen: None,
+            });
+        }
+        let nd = &self.nodes[node];
+        let live: Vec<bool> = (0..self.n).map(|i| nd.live & (1 << i) != 0).collect();
+        let kind = Self::kind_str(nd.kind);
         let (actions, strategy, reach, actor, actor_pos) = if nd.kind == KIND_ACTION {
             let actor = nd.actor as usize;
             let sigma = self.average_strategy(node);
-            let na = nd.actions.len();
-            let mut tot = 0f64;
-            let mut freqs = vec![0f64; na];
-            for h in 0..NUM_CLASSES {
-                let w = reaches[actor][h] as f64;
-                tot += w;
-                for a in 0..na {
-                    freqs[a] += w * sigma[a * NUM_CLASSES + h] as f64;
-                }
-            }
-            let actions = nd
-                .actions
-                .iter()
-                .enumerate()
-                .map(|(a, act)| PActionFreq {
-                    label: act.label.clone(),
-                    kind: act.kind.clone(),
-                    to: act.to,
-                    freq: if tot > 1e-12 {
-                        (freqs[a] / tot) as f32
-                    } else {
-                        0.0
-                    },
-                })
-                .collect();
+            let actions = self.action_freqs(node, &reaches);
             let reach: Vec<f32> = (0..NUM_CLASSES)
                 .map(|h| (reaches[actor][h] / class_prob(h)).min(1.0))
                 .collect();
@@ -691,6 +752,7 @@ impl PreflopSolver {
             reach,
             exportable,
             spr,
+            history,
         })
     }
 
@@ -889,19 +951,38 @@ fn next_state_of(
     ns
 }
 
-/// Tree-size limits: defaults keep the arenas laptop-friendly (~480 MB);
-/// override with PREFLOP_MAX_NODES / PREFLOP_MAX_ARENA_MB on big machines.
-pub fn limit_nodes() -> u64 {
-    std::env::var("PREFLOP_MAX_NODES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(400_000)
+/// MemAvailable from /proc/meminfo, in MB (None off-Linux).
+fn avail_mem_mb() -> Option<f64> {
+    let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+    s.lines()
+        .find(|l| l.starts_with("MemAvailable:"))
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|kb| kb.parse::<f64>().ok())
+        .map(|kb| kb / 1024.0)
 }
+
+/// Tree-size limits, derived from THIS machine: the regret/strategy arenas
+/// may take ~40% of currently available RAM (leaving room for the node
+/// structures, the equity table, the postflop solver and the OS), and the
+/// node cap scales with that (~830 nodes per arena-MB, the measured ratio).
+/// PREFLOP_MAX_ARENA_MB / PREFLOP_MAX_NODES override.
 pub fn limit_arena_mb() -> f64 {
-    std::env::var("PREFLOP_MAX_ARENA_MB")
+    if let Some(v) = std::env::var("PREFLOP_MAX_ARENA_MB")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(480.0)
+    {
+        return v;
+    }
+    avail_mem_mb().map(|a| a * 0.40).unwrap_or(2000.0)
+}
+pub fn limit_nodes() -> u64 {
+    if let Some(v) = std::env::var("PREFLOP_MAX_NODES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+    {
+        return v;
+    }
+    (limit_arena_mb() * 830.0) as u64
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -914,28 +995,29 @@ pub struct TreeEstimate {
     pub truncated: bool,
 }
 
-const ESTIMATE_HARD_CAP: u64 = 3_000_000;
-
 /// Count the tree a config would build — same enumeration logic as the
-/// builder, no allocation. Fast enough to run on every keystroke.
+/// builder, no allocation. Fast enough to run on every keystroke. The walk
+/// stops a little past this machine's node limit (bounded at 12M so absurd
+/// configs still return quickly).
 pub fn estimate_tree(cfg: &PreflopConfig) -> Result<TreeEstimate, String> {
     let n = validate(cfg)?;
+    let cap = (limit_nodes() + limit_nodes() / 10).clamp(3_000_000, 12_000_000);
     let mut est = TreeEstimate {
         nodes: 0,
         action_nodes: 0,
         arena_len: 0,
         truncated: false,
     };
-    count_walk(cfg, n, root_state(cfg, n), &mut est);
+    count_walk(cfg, n, root_state(cfg, n), &mut est, cap);
     Ok(est)
 }
 
-fn count_walk(cfg: &PreflopConfig, n: usize, st: BuildState, est: &mut TreeEstimate) {
+fn count_walk(cfg: &PreflopConfig, n: usize, st: BuildState, est: &mut TreeEstimate, cap: u64) {
     if est.truncated {
         return;
     }
     est.nodes += 1;
-    if est.nodes > ESTIMATE_HARD_CAP {
+    if est.nodes > cap {
         est.truncated = true;
         return;
     }
@@ -950,7 +1032,7 @@ fn count_walk(cfg: &PreflopConfig, n: usize, st: BuildState, est: &mut TreeEstim
     est.action_nodes += 1;
     est.arena_len += (acts.len() * NUM_CLASSES) as u64;
     for a in &acts {
-        count_walk(cfg, n, next_state_of(cfg, n, &st, actor, a), est);
+        count_walk(cfg, n, next_state_of(cfg, n, &st, actor, a), est, cap);
     }
 }
 

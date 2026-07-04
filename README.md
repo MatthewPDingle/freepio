@@ -55,8 +55,8 @@ Optional environment:
 | `SOLVER_GPU_MEM_MB` | live free VRAM | manual VRAM cap for the GPU engine; spots over budget fall back to CPU |
 | `SOLVER_MEM_MB` | 80% of free RAM (≤48 GB) | solver-arena RAM cap; bigger trees are refused at BUILD |
 | `PREFLOP_EQ_SAMPLES` | 20000 | Monte-Carlo samples per hand-class pair for the Preflop Lab equity table |
-| `PREFLOP_MAX_NODES` | 400000 | Preflop Lab tree-size limit (nodes); the lab shows a live estimate before BUILD |
-| `PREFLOP_MAX_ARENA_MB` | 480 | Preflop Lab regret/strategy memory limit (MB) |
+| `PREFLOP_MAX_NODES` | RAM-derived | Preflop Lab tree-size limit; the lab shows a live estimate + this machine's caps before BUILD |
+| `PREFLOP_MAX_ARENA_MB` | ~40% of free RAM | Preflop Lab regret/strategy memory limit (MB) |
 
 ## Workflow (mirrors PioSolver)
 

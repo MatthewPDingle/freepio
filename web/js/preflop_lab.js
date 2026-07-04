@@ -56,8 +56,9 @@ const PRESETS = [
 export function initPreflopLab({ els, onExport, toast }) {
   const S = {
     built: false,
-    path: [],       // action indices from the root
-    line: [],       // [{pos, label, kind}] for the ribbon
+    cursor: [],     // action indices to the node being VIEWED
+    lineP: [],      // the full line (cursor is always a prefix of it)
+    lineHist: null, // /api/preflop/node history for lineP (ribbon source)
     view: null,
     polling: null,
     positions: [],
@@ -133,14 +134,17 @@ export function initPreflopLab({ els, onExport, toast }) {
     catch (err) { els.estimate.textContent = `\u26a0 ${err.message}`; els.estimate.classList.add('bad'); return; }
     const nodes = (+e.nodes).toLocaleString();
     const mb = e.arena_mb < 1 ? e.arena_mb.toFixed(1) : e.arena_mb.toFixed(0);
+    const fmtBig = x => x >= 1e6 ? (x / 1e6).toFixed(1) + 'M'
+      : x >= 1e4 ? Math.round(x / 1e3) + 'k' : (+x).toLocaleString();
+    const caps = `this machine allows ${fmtBig(e.limit_nodes)} nodes / ` +
+      (e.limit_arena_mb >= 1000 ? (e.limit_arena_mb / 1000).toFixed(1) + ' GB' : e.limit_arena_mb.toFixed(0) + ' MB');
     if (e.ok) {
       els.estimate.innerHTML =
-        `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${(+e.action_nodes).toLocaleString()} decisions \u00b7 ${mb} MB \u2014 fits \u2713`;
+        `tree \u2248 <b>${nodes}</b> nodes \u00b7 ${(+e.action_nodes).toLocaleString()} decisions \u00b7 ${mb} MB \u2014 fits \u2713 <span class="dim">(${caps})</span>`;
       els.estimate.classList.remove('bad');
     } else {
       els.estimate.innerHTML =
-        `tree ${e.truncated ? '&gt;' : '\u2248'} <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 over the limit ` +
-        `(${(+e.limit_nodes).toLocaleString()} nodes / ${e.limit_arena_mb.toFixed(0)} MB): trim sizes, raises, or limps \u2717`;
+        `tree ${e.truncated ? '&gt;' : '\u2248'} <b>${nodes}</b> nodes \u00b7 ${mb} MB \u2014 too big: ${caps}. Trim sizes, raises, or limps \u2717`;
       els.estimate.classList.add('bad');
     }
   }
@@ -184,8 +188,8 @@ export function initPreflopLab({ els, onExport, toast }) {
       const info = await api.pfBuild(cfg);
       S.built = true;
       S.positions = cfg.positions;
-      S.path = [];
-      S.line = [];
+      S.cursor = [];
+      S.lineP = [];
       els.buildInfo.textContent =
         `${info.nodes.toLocaleString()} nodes · ${info.action_nodes.toLocaleString()} decision points · ${info.arena_mb.toFixed(0)} MB`;
       toast('preflop game built — SOLVE it');
@@ -234,35 +238,85 @@ export function initPreflopLab({ els, onExport, toast }) {
   async function refresh() {
     if (!S.built) return;
     try {
-      S.view = await api.pfNode(S.path);
+      const needLine = S.cursor.length !== S.lineP.length;
+      const [view, lineView] = await Promise.all([
+        api.pfNode(S.cursor),
+        needLine ? api.pfNode(S.lineP) : Promise.resolve(null),
+      ]);
+      S.view = view;
+      S.lineHist = (lineView || view).history;
     } catch (e) { toast(e.message, true); return; }
     renderRibbon();
     renderNode();
   }
 
-  function jumpTo(depth) {
-    S.path = S.path.slice(0, depth);
-    S.line = S.line.slice(0, depth);
-    refresh();
+  /** Chosen steps of the line up to the cursor: [{pos, label, kind}]. */
+  function takenSteps(upTo) {
+    const out = [];
+    (S.lineHist || []).slice(0, upTo).forEach(h => {
+      if (h.chosen != null && h.actions[h.chosen]) {
+        const a = h.actions[h.chosen];
+        out.push({ pos: h.actor_pos, label: a.label, kind: a.kind });
+      }
+    });
+    return out;
   }
 
+  // Browse-style ribbon: one segment per decision along the FULL line, every
+  // available action as a chip with its frequency. Clicking the taken chip
+  // (or the segment) views that point without losing the line; clicking a
+  // different chip branches the line there.
   function renderRibbon() {
     const el = els.ribbon;
     el.innerHTML = '';
-    const root = document.createElement('button');
-    root.className = 'pfl-crumb' + (S.path.length === 0 ? ' cur' : '');
-    root.textContent = '⟲ START';
-    root.dataset.tip = 'Start of the hand, before any action. The green outline marks the point you are viewing — click any step to jump back to it.';
-    root.addEventListener('click', () => jumpTo(0));
-    el.appendChild(root);
-    S.line.forEach((step, k) => {
-      const b = document.createElement('button');
-      b.className = 'pfl-crumb' + (k === S.line.length - 1 ? ' cur' : '');
-      b.innerHTML = `<b>${step.pos}</b> ${step.label}`;
-      b.style.borderBottomColor = step.color || 'transparent';
-      b.dataset.tip = `${step.pos} ${step.label} — click to view the moment just after this action.`;
-      b.addEventListener('click', () => jumpTo(k + 1));
-      el.appendChild(b);
+    const hist = S.lineHist || [];
+    const cursor = S.cursor.length;
+    hist.forEach((h, d) => {
+      const seg = document.createElement('div');
+      seg.className = 'hist-seg' + (d === cursor ? ' current' : '');
+      const head = document.createElement('div');
+      head.className = 'hist-head';
+      if (h.kind === 'action') {
+        head.innerHTML = `<span>${d === 0 ? 'PREFLOP · ' : ''}${h.actor_pos}</span><b>${h.pot.toFixed(1)}</b>`;
+      } else {
+        head.innerHTML = h.kind === 'pot_share'
+          ? `<span>FLOP</span><b>${h.pot.toFixed(1)}</b>`
+          : `<span>END</span><b>${h.pot.toFixed(1)}</b>`;
+      }
+      seg.appendChild(head);
+      seg.dataset.tip = d === cursor
+        ? 'The point you are viewing.'
+        : 'Click to view this point (the line is kept).';
+      seg.addEventListener('click', () => {
+        if (d !== cursor) { S.cursor = S.lineP.slice(0, d); refresh(); }
+      });
+      if (h.kind === 'action') {
+        h.actions.forEach((a, k) => {
+          const chip = document.createElement('div');
+          chip.className = 'hist-chip' + (h.chosen === k ? ' taken' : '');
+          chip.textContent = `${a.label} · ${(a.freq * 100).toFixed(0)}%`;
+          chip.dataset.tip = h.chosen === k
+            ? `${h.actor_pos} takes ${a.label} ${(a.freq * 100).toFixed(1)}% of the time here — the line follows this action. Click to view the moment just after it.`
+            : `${h.actor_pos}: ${a.label} ${(a.freq * 100).toFixed(1)}% of the time. Click to ${h.chosen == null ? 'take' : 'branch the line onto'} this action.`;
+          chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (h.chosen === k) {
+              S.cursor = S.lineP.slice(0, d + 1); // view after the taken action
+            } else {
+              S.lineP = [...S.lineP.slice(0, d), k]; // branch (or advance) here
+              S.cursor = S.lineP.slice();
+            }
+            refresh();
+          });
+          seg.appendChild(chip);
+        });
+      } else {
+        const chip = document.createElement('div');
+        chip.className = 'hist-chip taken';
+        chip.textContent = h.kind === 'pot_share' ? 'flop reached' : 'hand over';
+        seg.appendChild(chip);
+      }
+      el.appendChild(seg);
     });
   }
 
@@ -278,8 +332,6 @@ export function initPreflopLab({ els, onExport, toast }) {
 
   function renderNode() {
     const v = S.view;
-    const el = els.actions;
-    el.innerHTML = '';
     els.exportBtn.classList.add('hidden');
 
     // seats strip: who's live, what they've put in
@@ -293,28 +345,17 @@ export function initPreflopLab({ els, onExport, toast }) {
     if (v.kind === 'action') {
       const colors = actionColors(v.actions);
       // headline: who acts, and what (if anything) they're facing
-      const lastAggr = [...S.line].reverse().find(s => s.kind === 'raise' || s.kind === 'jam');
+      const past = takenSteps(S.cursor.length);
+      const lastAggr = [...past].reverse().find(s => s.kind === 'raise' || s.kind === 'jam');
       const facing = lastAggr && lastAggr.pos !== v.actor_pos
         ? ` — facing ${lastAggr.pos}'s ${lastAggr.label}`
         : lastAggr && lastAggr.pos === v.actor_pos
           ? '' // their own raise came back around (someone called/limped behind)
-          : S.line.length ? ' — unraised pot' : ' — first to act';
-      els.nodeTitle.textContent = `${v.actor_pos} to act${facing}`;
+          : past.length ? ' — unraised pot' : ' — first to act';
+      els.nodeTitle.textContent = `${v.actor_pos} to act${facing} · pick actions in the ribbon above`;
       S.colors = colors;
       els.grid.classList.remove('hidden');
       els.fillSeg.classList.remove('hidden');
-      v.actions.forEach((a, k) => {
-        const b = document.createElement('button');
-        b.className = 'pfl-act';
-        b.style.background = colors[k];
-        b.innerHTML = `${a.label} <b>${(a.freq * 100).toFixed(1)}%</b>`;
-        b.addEventListener('click', () => {
-          S.path.push(k);
-          S.line.push({ pos: v.actor_pos, label: a.label, kind: a.kind, color: colors[k] });
-          refresh();
-        });
-        el.appendChild(b);
-      });
       paintGrid();
       renderDetail();
       renderLegend(v, colors);
@@ -341,11 +382,12 @@ export function initPreflopLab({ els, onExport, toast }) {
 
   els.exportBtn.addEventListener('click', async () => {
     try {
-      const ex = await api.pfExport(S.path);
-      const lineText = S.line.map(s => `${s.pos} ${s.label}`).join(' · ') || 'root';
+      const ex = await api.pfExport(S.cursor);
+      const steps = takenSteps(S.cursor.length);
+      const lineText = steps.map(s => `${s.pos} ${s.label}`).join(' · ') || 'root';
       // ribbon segments for Browse: continuing actions only (folds are just
       // dead money in the pot, same convention as the study module)
-      ex.segments = S.line
+      ex.segments = steps
         .filter(st => st.kind !== 'fold')
         .map(st => ({ pos: st.pos, label: st.label }));
       onExport(ex, lineText);

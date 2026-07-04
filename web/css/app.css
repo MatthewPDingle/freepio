@@ -767,11 +767,8 @@ textarea {
 .pfl-row select { flex: 1; }
 .pfl-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 8px 0; }
 .pfl-side .chk { flex-direction: row; justify-content: flex-start; }
-#pfl-ribbon { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
-.pfl-crumb { background: var(--panel2); color: var(--ink-dim); border: 1px solid var(--line2);
-  border-bottom-width: 3px; border-radius: 4px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
-.pfl-crumb b { color: var(--ink); margin-right: 4px; }
-.pfl-crumb.cur { outline: 1px solid var(--accent); }
+#pfl-ribbon { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+#pfl-ribbon .hist-seg { cursor: pointer; }
 .pfl-nodehead { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 0; }
 #pfl-nodetitle { font-size: 13px; color: var(--ink); font-weight: 600; }
 #pfl-seats { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
@@ -779,11 +776,6 @@ textarea {
   background: var(--panel2); color: var(--ink-dim); border: 1px solid var(--line2); }
 .pfl-seat.dead { opacity: .35; text-decoration: line-through; }
 .pfl-seat.cur { border-color: var(--accent); color: var(--ink); }
-#pfl-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-.pfl-act { border: none; border-radius: 4px; color: #fff; padding: 7px 12px;
-  font-size: 12px; cursor: pointer; opacity: .92; }
-.pfl-act:hover { opacity: 1; }
-.pfl-act b { margin-left: 6px; }
 #pfl-grid { max-width: 720px; }
 .pfl-gridbar { display: flex; align-items: center; gap: 14px; margin: 2px 0 6px; }
 #pfl-detail { font-size: 10px; }
