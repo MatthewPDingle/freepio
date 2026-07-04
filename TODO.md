@@ -82,7 +82,24 @@ SPR, suited/connected > offsuit-junk at equal equity.
 
 ---
 
-## 2. Preflop player profiles — model & exploit real opponents (NEXT UP)
+## 2. Preflop player profiles — DONE except the P5 slivers (2026-07-04)
+
+**Shipped:** P1 engine (seat modes live/frozen/ruled, five buckets incl.
+squeeze, BucketPolicy compilation, point-lock engine+API), P2 generator
+(equilibrium distortion; raising slices ranked by raw strength because
+baseline solves limp-trap AA; archetypes; implied-stat readback; profile
+store in saves/profiles/), P3 UI (step 4 · MODEL THE PLAYERS: per-seat
+archetype/saved/custom selectors, stats→GENERATE editor with per-bucket
+multi-action painting grid, ribbon 🔒 badges), P4 hero mode + per-seat
+bleed readouts. E2E: whale implied exactly 60/8/2, exploiter EV −0.12 →
++0.13 bb, whale bleeds 2.57 bb, hero gap converges to 0.0009.
+
+**Remaining (P5, as originally scoped):** GPU kernels for seat modes
+(profile solves currently fall back to CPU with a note — blocked on the
+preflop CUDA kernels being desktop-validated first) and a point-lock UI
+(engine + /api/preflop/lock|unlock already exist).
+
+Original design follows for reference:
 
 **Goal (designed 2026-07-04 with Matthew; his examples are the spec).** Model
 reads like "VPIPs every hand", "OMC who only raises AA/KK at the max open

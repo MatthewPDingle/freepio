@@ -589,6 +589,8 @@ initPreflopLab({
     seats: $('pfl-seats'), rangeSeg: $('pfl-rangeseg'), grid: $('pfl-grid'),
     legend: $('pfl-legend'), gridCap: $('pfl-gridcap'), exportBtn: $('pfl-export'),
     fillSeg: $('pfl-fillseg'), estimate: $('pfl-estimate'),
+    modelBox: $('pfl-model'), editor: $('pfl-editor'),
+    hero: $('pfl-hero'), applyBtn: $('pfl-apply'),
   },
   toast,
   gotoSetup: () => showTab('setup'),

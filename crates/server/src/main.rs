@@ -877,6 +877,195 @@ struct PfPathRequest {
     path: Vec<usize>,
 }
 
+// ---- player profiles ----
+
+#[derive(Deserialize)]
+struct PfSeatModel {
+    #[serde(default)]
+    frozen: bool,
+    #[serde(default)]
+    profile: Option<solver::preflop::SeatProfile>,
+}
+
+#[derive(Deserialize)]
+struct PfTableRequest {
+    seats: Vec<PfSeatModel>,
+}
+
+async fn pf_table(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfTableRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (solver, _, _) = pf_session(&state)?;
+    let overrides = tokio::task::spawn_blocking(move || {
+        let mut s = solver.lock().unwrap();
+        let frozen = req.seats.iter().map(|x| x.frozen).collect();
+        let profiles = req.seats.into_iter().map(|x| x.profile).collect();
+        s.set_table(frozen, profiles)?;
+        Ok::<bool, String>(s.has_overrides())
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(serde_json::json!({"ok": true, "overrides": overrides})))
+}
+
+#[derive(Deserialize)]
+struct PfGenerateRequest {
+    seat: usize,
+    stats: solver::preflop::HudStats,
+    #[serde(default)]
+    name: String,
+}
+
+async fn pf_generate(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfGenerateRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (solver, _, _) = pf_session(&state)?;
+    let out = tokio::task::spawn_blocking(move || {
+        let s = solver.lock().unwrap();
+        let name = if req.name.is_empty() { "custom" } else { &req.name };
+        s.generate_profile(req.seat, &req.stats, name)
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(serde_json::json!({"profile": out.0, "implied": out.1})))
+}
+
+async fn pf_archetypes() -> Json<serde_json::Value> {
+    let list: Vec<serde_json::Value> = solver::preflop::archetypes()
+        .into_iter()
+        .map(|(n, s)| serde_json::json!({"name": n, "stats": s}))
+        .collect();
+    Json(serde_json::json!(list))
+}
+
+#[derive(Deserialize)]
+struct PfHeroRequest {
+    seat: Option<usize>,
+}
+
+async fn pf_hero(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfHeroRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (solver, _, _) = pf_session(&state)?;
+    tokio::task::spawn_blocking(move || {
+        let mut s = solver.lock().unwrap();
+        let n = s.n;
+        match req.seat {
+            Some(h) if h >= n => return Err("no such seat".to_string()),
+            Some(h) => s.seat_frozen = (0..n).map(|i| i != h).collect(),
+            None => s.seat_frozen = vec![false; n],
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+fn profile_path(name: &str) -> Result<std::path::PathBuf, String> {
+    let clean: String = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
+        .collect();
+    if clean.trim().is_empty() {
+        return Err("profile needs a name".into());
+    }
+    Ok(std::path::PathBuf::from("saves/profiles").join(format!("{}.json", clean.trim())))
+}
+
+async fn pf_profiles_list() -> Json<serde_json::Value> {
+    let mut names: Vec<String> = std::fs::read_dir("saves/profiles")
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    e.path()
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    Json(serde_json::json!(names))
+}
+
+#[derive(Deserialize)]
+struct PfProfileSave {
+    name: String,
+    profile: solver::preflop::SeatProfile,
+}
+
+async fn pf_profile_save(
+    Json(req): Json<PfProfileSave>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let path = profile_path(&req.name).map_err(bad_request)?;
+    std::fs::create_dir_all("saves/profiles").map_err(|e| bad_request(e.to_string()))?;
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&req.profile).map_err(|e| bad_request(e.to_string()))?,
+    )
+    .map_err(|e| bad_request(e.to_string()))?;
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+#[derive(Deserialize)]
+struct PfProfileGet {
+    name: String,
+}
+
+async fn pf_profile_get(
+    Json(req): Json<PfProfileGet>,
+) -> Result<Json<solver::preflop::SeatProfile>, ApiError> {
+    let path = profile_path(&req.name).map_err(bad_request)?;
+    let bytes = std::fs::read(&path).map_err(|e| bad_request(e.to_string()))?;
+    let p: solver::preflop::SeatProfile =
+        serde_json::from_slice(&bytes).map_err(|e| bad_request(e.to_string()))?;
+    Ok(Json(p))
+}
+
+#[derive(Deserialize)]
+struct PfPointLockRequest {
+    path: Vec<usize>,
+    #[serde(default)]
+    policy: Option<solver::preflop::BucketPolicy>,
+}
+
+async fn pf_lock(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfPointLockRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (solver, _, _) = pf_session(&state)?;
+    tokio::task::spawn_blocking(move || {
+        let mut s = solver.lock().unwrap();
+        s.lock_point(&req.path, req.policy)
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+async fn pf_unlock(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfPathRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (solver, _, _) = pf_session(&state)?;
+    let removed = tokio::task::spawn_blocking(move || {
+        let mut s = solver.lock().unwrap();
+        s.unlock_point(&req.path)
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(serde_json::json!({"ok": true, "removed": removed})))
+}
+
 async fn pf_node(
     State(state): State<Arc<AppState>>,
     Json(req): Json<PfPathRequest>,
@@ -1303,6 +1492,15 @@ async fn main() {
         .route("/api/preflop/status", get(pf_status))
         .route("/api/preflop/node", post(pf_node))
         .route("/api/preflop/export", post(pf_export))
+        .route("/api/preflop/table", post(pf_table))
+        .route("/api/preflop/generate", post(pf_generate))
+        .route("/api/preflop/archetypes", get(pf_archetypes))
+        .route("/api/preflop/hero", post(pf_hero))
+        .route("/api/preflop/profiles", get(pf_profiles_list))
+        .route("/api/preflop/profiles/save", post(pf_profile_save))
+        .route("/api/preflop/profiles/get", post(pf_profile_get))
+        .route("/api/preflop/lock", post(pf_lock))
+        .route("/api/preflop/unlock", post(pf_unlock))
         .fallback_service(serve_dir)
         .with_state(state);
 

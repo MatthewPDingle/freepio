@@ -560,3 +560,50 @@ fn point_lock_roundtrip() {
         .fold(0f32, f32::max);
     assert!(diff < 1e-6, "unlock should restore the solver strategy");
 }
+
+/// P2: equilibrium-distortion generation hits its stat targets and puts the
+/// right hands in the right slices.
+#[test]
+fn generated_profiles_match_stats()  {
+    let eq = table();
+    let mut s = PreflopSolver::new(hu_limp_config(), eq).unwrap();
+    for _ in 0..400 {
+        s.iterate();
+    }
+    let aa = solver::preflop::equity::class_index(12, 12, false);
+    let seven_deuce = solver::preflop::equity::class_index(5, 0, false);
+
+    // a whale: 60/8, mostly position-blind
+    let whale_stats = solver::preflop::archetypes()
+        .into_iter()
+        .find(|(n, _)| n.starts_with("Whale"))
+        .unwrap()
+        .1;
+    let (whale, implied) = s.generate_profile(1, &whale_stats, "whale").unwrap();
+    assert!((implied.vpip - 60.0).abs() < 3.0, "implied vpip {}", implied.vpip);
+    assert!((implied.pfr - 8.0).abs() < 2.0, "implied pfr {}", implied.pfr);
+    let b0 = whale.buckets[BUCKET_UNOPENED as usize].as_ref().unwrap();
+    let cont_aa = b0.call[aa] + b0.raise[aa] + b0.jam[aa];
+    assert!(cont_aa > 0.99, "AA must be in a 60% range");
+
+    // a nit/OMC: tiny pfr -> premiums raise, junk folds
+    let nit_stats = solver::preflop::archetypes()
+        .into_iter()
+        .find(|(n, _)| n.starts_with("Nit"))
+        .unwrap()
+        .1;
+    let (nit, ni) = s.generate_profile(1, &nit_stats, "nit").unwrap();
+    assert!((ni.vpip - 12.0).abs() < 2.5, "implied vpip {}", ni.vpip);
+    let b0 = nit.buckets[BUCKET_UNOPENED as usize].as_ref().unwrap();
+    assert!(b0.raise[aa] > 0.9, "AA must be in the OMC's raising range");
+    let cont_72 = b0.call[seven_deuce] + b0.raise[seven_deuce] + b0.jam[seven_deuce];
+    assert!(cont_72 < 0.05, "72o must be out of a 12% range, got {cont_72}");
+
+    // applying a generated profile keeps the solver healthy
+    s.set_table(vec![false, false], vec![None, Some(whale)]).unwrap();
+    for _ in 0..100 {
+        s.iterate();
+    }
+    let evs = s.evs();
+    assert!(evs[0] > 0.0, "SB should profit vs the generated whale: {evs:?}");
+}

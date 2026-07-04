@@ -19,7 +19,7 @@ pub mod equity;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 
-use equity::{class_prob, EquityTable, NUM_CLASSES};
+use equity::{class_combos, class_prob, EquityTable, NUM_CLASSES};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cell::UnsafeCell;
@@ -1085,6 +1085,231 @@ impl PreflopSolver {
         })
     }
 
+    /// Reach-weighted per-seat, per-bucket, per-class propensities under the
+    /// current average strategies: (weight, continue-mass, raise-mass). One
+    /// full-tree pass; the raw material for equilibrium-distortion profiles.
+    fn bucket_summaries(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+        let sz = self.n * NUM_BUCKETS * NUM_CLASSES;
+        let mut w = vec![0f64; sz];
+        let mut c = vec![0f64; sz];
+        let mut r = vec![0f64; sz];
+        let mut reaches = self.root_reaches();
+        self.sum_walk(0, &mut reaches, &mut w, &mut c, &mut r);
+        (w, c, r)
+    }
+
+    fn sum_walk(
+        &self,
+        node: usize,
+        reaches: &mut [Vec<f32>],
+        w: &mut [f64],
+        c: &mut [f64],
+        r: &mut [f64],
+    ) {
+        let nd = &self.nodes[node];
+        if nd.kind != KIND_ACTION {
+            return;
+        }
+        let actor = nd.actor as usize;
+        let na = nd.actions.len();
+        let sigma = self.average_strategy(node);
+        let base = (actor * NUM_BUCKETS + nd.bucket as usize) * NUM_CLASSES;
+        for h in 0..NUM_CLASSES {
+            let wt = reaches[actor][h] as f64;
+            if wt <= 0.0 {
+                continue;
+            }
+            let mut fold = 0f64;
+            let mut aggr = 0f64;
+            for (a, act) in nd.actions.iter().enumerate() {
+                let s = sigma[a * NUM_CLASSES + h] as f64;
+                match act.kind.as_str() {
+                    "fold" => fold += s,
+                    "raise" | "jam" => aggr += s,
+                    _ => {}
+                }
+            }
+            w[base + h] += wt;
+            c[base + h] += wt * (1.0 - fold);
+            r[base + h] += wt * aggr;
+        }
+        let saved = reaches[actor].clone();
+        for a in 0..na {
+            for h in 0..NUM_CLASSES {
+                reaches[actor][h] = saved[h] * sigma[a * NUM_CLASSES + h];
+            }
+            self.sum_walk(self.child(node, a), reaches, w, c, r);
+        }
+        reaches[actor].copy_from_slice(&saved);
+    }
+
+    /// Generate a profile for `seat` by DISTORTING THE CURRENT EQUILIBRIUM:
+    /// classes are ranked by the solve's own propensity to continue/raise in
+    /// each bucket (optionally flattened toward the table average for
+    /// position-blind players) and filled to the stat targets. Requires a
+    /// baseline solve (iteration > 0).
+    pub fn generate_profile(
+        &self,
+        seat: usize,
+        stats: &HudStats,
+        name: &str,
+    ) -> Result<(SeatProfile, ImpliedStats), String> {
+        if seat >= self.n {
+            return Err("no such seat".into());
+        }
+        if self.iteration == 0 {
+            return Err("solve the unlocked game first — profiles distort that equilibrium".into());
+        }
+        let (w, c, r) = self.bucket_summaries();
+        let idx = |s: usize, b: usize, h: usize| (s * NUM_BUCKETS + b) * NUM_CLASSES + h;
+        // blended propensities for this seat
+        let prop = |b: usize, h: usize, of: &Vec<f64>| -> f64 {
+            let mine = if w[idx(seat, b, h)] > 1e-12 {
+                of[idx(seat, b, h)] / w[idx(seat, b, h)]
+            } else {
+                0.0
+            };
+            let (mut tw, mut tv) = (0f64, 0f64);
+            for q in 0..self.n {
+                tw += w[idx(q, b, h)];
+                tv += of[idx(q, b, h)];
+            }
+            let table = if tw > 1e-12 { tv / tw } else { 0.0 };
+            (1.0 - stats.flatten) * mine + stats.flatten * table
+        };
+        // combo-weighted baseline continue% of a bucket for this seat
+        let base_cont = |b: usize| -> f64 {
+            let mut num = 0f64;
+            for h in 0..NUM_CLASSES {
+                num += class_combos(h) as f64 * prop(b, h, &c);
+            }
+            num / 1326.0
+        };
+        let fourbet = stats.fourbet.unwrap_or(stats.threebet * 0.4);
+        let base_vpip = base_cont(BUCKET_UNOPENED as usize).max(0.01);
+        let scale = (stats.vpip / 100.0) / base_vpip;
+        let mut targets = [(0f64, 0f64); NUM_BUCKETS]; // (continue, raise)
+        targets[BUCKET_UNOPENED as usize] = (stats.vpip / 100.0, stats.pfr / 100.0);
+        targets[BUCKET_VS_LIMPS as usize] = (stats.vpip / 100.0, stats.pfr / 100.0);
+        targets[BUCKET_VS_RAISE as usize] = (
+            (base_cont(BUCKET_VS_RAISE as usize) * scale).clamp(stats.threebet / 100.0, 1.0),
+            stats.threebet / 100.0,
+        );
+        targets[BUCKET_SQUEEZE as usize] = (
+            (base_cont(BUCKET_SQUEEZE as usize) * scale).clamp(stats.squeeze / 100.0, 1.0),
+            stats.squeeze / 100.0,
+        );
+        targets[BUCKET_VS_3BET as usize] = (
+            (1.0 - stats.fold_to_3bet / 100.0).clamp(0.0, 1.0),
+            (fourbet / 100.0).clamp(0.0, 1.0),
+        );
+
+        let mut buckets: Vec<Option<BucketPolicy>> = Vec::with_capacity(NUM_BUCKETS);
+        for b in 0..NUM_BUCKETS {
+            let (t_cont, t_raise) = targets[b];
+            // rank-and-fill the continuing range by continue propensity
+            let mut order: Vec<usize> = (0..NUM_CLASSES).collect();
+            order.sort_by(|&x, &y| {
+                prop(b, y, &c)
+                    .partial_cmp(&prop(b, x, &c))
+                    .unwrap()
+                    .then(prop(b, y, &r).partial_cmp(&prop(b, x, &r)).unwrap())
+            });
+            let mut cont = vec![0f32; NUM_CLASSES];
+            let mut acc = 0f64;
+            for &h in &order {
+                if acc >= t_cont * 1326.0 {
+                    break;
+                }
+                let take = (t_cont * 1326.0 - acc).min(class_combos(h) as f64);
+                cont[h] = (take / class_combos(h) as f64) as f32;
+                acc += take;
+            }
+            // Raising slice within the continuing range: ranked by RAW
+            // STRENGTH (equity vs random), not the equilibrium's raise mix —
+            // baseline solves limp-trap AA at real frequency, which would
+            // misplace premiums in a small raising range; humans with a
+            // 1.5% PFR raise their strongest hands, full stop.
+            let strength: Vec<f64> = (0..NUM_CLASSES)
+                .map(|h| {
+                    (0..NUM_CLASSES)
+                        .map(|j| class_prob(j) as f64 * self.eq.eq(h, j) as f64)
+                        .sum()
+                })
+                .collect();
+            let mut order_r: Vec<usize> = (0..NUM_CLASSES).collect();
+            order_r.sort_by(|&x, &y| {
+                strength[y]
+                    .partial_cmp(&strength[x])
+                    .unwrap()
+                    .then(prop(b, y, &r).partial_cmp(&prop(b, x, &r)).unwrap())
+            });
+            let mut raise = vec![0f32; NUM_CLASSES];
+            let mut racc = 0f64;
+            for &h in &order_r {
+                if racc >= t_raise * 1326.0 {
+                    break;
+                }
+                let avail = class_combos(h) as f64 * cont[h] as f64;
+                if avail <= 0.0 {
+                    continue;
+                }
+                let take = (t_raise * 1326.0 - racc).min(avail);
+                raise[h] = (take / class_combos(h) as f64) as f32;
+                racc += take;
+            }
+            let call: Vec<f32> = (0..NUM_CLASSES).map(|h| (cont[h] - raise[h]).max(0.0)).collect();
+            let jam = vec![0f32; NUM_CLASSES];
+            let (raise, jam) = if stats.raise_size == "jam" {
+                (jam.clone(), raise)
+            } else {
+                (raise, jam)
+            };
+            buckets.push(Some(BucketPolicy {
+                call,
+                raise,
+                jam,
+                raise_size: if stats.raise_size == "jam" {
+                    "max".into()
+                } else {
+                    stats.raise_size.clone()
+                },
+            }));
+        }
+
+        let combo_pct = |v: &Vec<f32>| -> f64 {
+            (0..NUM_CLASSES)
+                .map(|h| class_combos(h) as f64 * v[h] as f64)
+                .sum::<f64>()
+                / 1326.0
+                * 100.0
+        };
+        let bp = |b: u8| buckets[b as usize].as_ref().unwrap();
+        let cont_pct = |b: u8| {
+            let p = bp(b);
+            combo_pct(&p.call) + combo_pct(&p.raise) + combo_pct(&p.jam)
+        };
+        let aggr_pct = |b: u8| {
+            let p = bp(b);
+            combo_pct(&p.raise) + combo_pct(&p.jam)
+        };
+        let implied = ImpliedStats {
+            vpip: cont_pct(BUCKET_UNOPENED),
+            pfr: aggr_pct(BUCKET_UNOPENED),
+            threebet: aggr_pct(BUCKET_VS_RAISE),
+            cont_vs_raise: cont_pct(BUCKET_VS_RAISE),
+            squeeze: aggr_pct(BUCKET_SQUEEZE),
+            cont_vs_3bet: cont_pct(BUCKET_VS_3BET),
+        };
+        Ok((
+            SeatProfile {
+                name: name.to_string(),
+                buckets,
+            },
+            implied,
+        ))
+    }
+
     /// Estimated arena memory in MB (regrets + strategy sums).
     pub fn arena_mb(&self) -> f64 {
         (self.arena_len * 2 * 4) as f64 / 1e6
@@ -1341,6 +1566,58 @@ fn count_walk(cfg: &PreflopConfig, n: usize, st: BuildState, est: &mut TreeEstim
     for a in &acts {
         count_walk(cfg, n, next_state_of(cfg, n, &st, actor, a), est, cap);
     }
+}
+
+/// HUD-style stats driving profile generation (percent units, 0..100).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HudStats {
+    pub vpip: f64,
+    pub pfr: f64,
+    pub threebet: f64,
+    pub fold_to_3bet: f64,
+    #[serde(default)]
+    pub squeeze: f64,
+    #[serde(default)]
+    pub fourbet: Option<f64>,
+    /// 0 = fully positional (each seat distorts its own equilibrium),
+    /// 1 = position-blind (fish): ranked against the table-average shape.
+    #[serde(default)]
+    pub flatten: f64,
+    #[serde(default = "default_raise_size")]
+    pub raise_size: String,
+}
+
+/// Stats the generated profile actually implies (readback for trust).
+#[derive(Debug, Clone, Serialize)]
+pub struct ImpliedStats {
+    pub vpip: f64,
+    pub pfr: f64,
+    pub threebet: f64,
+    pub cont_vs_raise: f64,
+    pub squeeze: f64,
+    pub cont_vs_3bet: f64,
+}
+
+/// Named archetypes: (name, stats). Starting points, all editable.
+pub fn archetypes() -> Vec<(&'static str, HudStats)> {
+    let mk = |vpip, pfr, threebet, f2b, squeeze, flatten, size: &str| HudStats {
+        vpip,
+        pfr,
+        threebet,
+        fold_to_3bet: f2b,
+        squeeze,
+        fourbet: None,
+        flatten,
+        raise_size: size.into(),
+    };
+    vec![
+        ("Whale (loose-passive)", mk(60.0, 8.0, 2.0, 20.0, 2.0, 0.75, "min")),
+        ("Nit / OMC", mk(12.0, 1.5, 1.0, 15.0, 0.5, 0.25, "max")),
+        ("Calling station", mk(45.0, 10.0, 3.0, 15.0, 3.0, 0.6, "min")),
+        ("TAG", mk(24.0, 19.0, 7.0, 55.0, 6.0, 0.1, "min")),
+        ("LAG", mk(30.0, 25.0, 11.0, 45.0, 9.0, 0.1, "min")),
+        ("Maniac", mk(55.0, 40.0, 20.0, 25.0, 15.0, 0.5, "max")),
+    ]
 }
 
 fn trim(x: f64) -> String {

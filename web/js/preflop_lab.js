@@ -69,7 +69,19 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     lastState: null, // last solver state seen by poll (drives the progress bar)
     gap0: null,      // first measured BR gap of the current run (progress scale)
     runPct: 0,       // monotonic progress within the current run
+    model: null,     // per-seat {mode, profile, implied, label}; hero seat
+    applied: null,   // last model actually sent to the solver (drives 🔒)
+    lastGaps: null,  // per-seat BR gaps from the last checkpoint (bleeds)
+    editSeat: null,  // seat open in the profile editor
+    editBucket: 0,
+    paintAction: 'call',
+    paintWeight: 1.0,
+    painting: false,
   };
+  let ARCHETYPES = [];
+  let SAVED_PROFILES = [];
+  api.pfArchetypes().then(a => { ARCHETYPES = a; renderModel(); }).catch(() => {});
+  api.pfProfiles().then(p => { SAVED_PROFILES = p; renderModel(); }).catch(() => {});
 
   // Browse-identical matrix: same .cell markup/classes; each cell carries a
   // data-tip with its exact numbers (the app tooltip system is delegated, so
@@ -246,6 +258,14 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       S.positions = cfg.positions;
       S.cursor = [];
       S.lineP = [];
+      S.model = {
+        seats: cfg.positions.map(() => ({ mode: 'live', profile: null, implied: null, label: 'Solver' })),
+        hero: null,
+      };
+      S.applied = null;
+      S.lastGaps = null;
+      closeEditor();
+      renderModel();
       els.buildInfo.textContent =
         `${info.nodes.toLocaleString()} nodes · ${info.action_nodes.toLocaleString()} decision points · ${info.arena_mb.toFixed(0)} MB`;
       progressSet(100, 'built ✓ — SOLVE to fill in the strategies');
@@ -307,6 +327,8 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       els.status.dataset.tip =
         'Best-response gap: how much each seat could gain by deviating (bb) — the convergence metric. ' +
         st.gaps.map((g, i) => `${S.positions[i] || i}: ${g.toFixed(4)}`).join(' · ');
+      S.lastGaps = st.gaps;
+      renderModel();
     }
     const engine = st.gpu ? '\u26a1 GPU \u00b7 ' : '';
     const note = !st.gpu && st.gpu_note ? ` \u00b7 ${st.gpu_note}` : '';
@@ -405,7 +427,9 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
       const head = document.createElement('div');
       head.className = 'hist-head';
       if (h.kind === 'action') {
-        head.innerHTML = `<span>${h.actor_pos}</span><b>${h.pot.toFixed(1)}</b>`;
+        const si = S.positions.indexOf(h.actor_pos);
+        const locked = S.applied && si >= 0 && S.applied[si] !== 'live';
+        head.innerHTML = `<span>${locked ? '🔒 ' : ''}${h.actor_pos}</span><b>${h.pot.toFixed(1)}</b>`;
       } else {
         head.innerHTML = h.kind === 'pot_share'
           ? `<span>FLOP</span><b>${h.pot.toFixed(1)}</b>`
@@ -539,7 +563,7 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
         els.gridCap.innerHTML =
           `This line goes <b>${live.length}-way</b> to the flop, and the postflop solver ` +
           `is heads-up only. Branch the ribbon above onto a line where exactly two ` +
-          `players see the flop (step 5 unlocks there), or set a spot up ` +
+          `players see the flop (step 6 unlocks there), or set a spot up ` +
           `manually with your own ranges in SETUP. `;
         const b = document.createElement('button');
         b.className = 'btn ghost';
@@ -547,6 +571,295 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
         b.style.marginLeft = '6px';
         b.addEventListener('click', gotoSetup);
         els.gridCap.appendChild(b);
+      }
+    }
+  }
+
+  // ----- 4 · MODEL THE PLAYERS -----
+
+  const PCOLORS = { fold: '#4a78c8', call: '#5ca75f', raise: '#e8484c', jam: '#7d3ca3' };
+  const BUCKET_NAMES = ['UNOPENED', 'VS LIMPS', 'VS RAISE', 'SQUEEZE', 'VS 3-BET+'];
+
+  function renderModel() {
+    if (!els.modelBox) return;
+    els.modelBox.innerHTML = '';
+    if (!S.model) return;
+    S.model.seats.forEach((m, i) => {
+      const row = document.createElement('div');
+      row.className = 'pfl-seatrow';
+      const sel = document.createElement('select');
+      let html = `<option value="live">Solver</option><option value="frozen">Frozen (as solved)</option>`;
+      if (ARCHETYPES.length) {
+        html += '<optgroup label="archetypes — generated from this solve">' +
+          ARCHETYPES.map((a, k) => `<option value="arch:${k}">${a.name}</option>`).join('') +
+          '</optgroup>';
+      }
+      if (SAVED_PROFILES.length) {
+        html += '<optgroup label="saved profiles">' +
+          SAVED_PROFILES.map(n => `<option value="saved:${n}">${n}</option>`).join('') +
+          '</optgroup>';
+      }
+      sel.innerHTML = html;
+      sel.value = m.mode === 'live' ? 'live' : m.mode === 'frozen' ? 'frozen' : (m.selValue || 'live');
+      sel.addEventListener('change', () => seatSelect(i, sel));
+      const info = document.createElement('span');
+      info.className = 'pfl-seatinfo';
+      let txt = '';
+      if (m.mode === 'ruled' && m.implied) {
+        txt = `${m.implied.vpip.toFixed(0)}/${m.implied.pfr.toFixed(0)}/${m.implied.threebet.toFixed(1)}`;
+      }
+      if (m.mode !== 'live' && S.applied && S.lastGaps && S.lastGaps[i] != null) {
+        txt += `${txt ? ' · ' : ''}bleeds ${S.lastGaps[i].toFixed(2)} bb`;
+      }
+      info.textContent = txt;
+      row.innerHTML = `<b>${S.positions[i]}</b>`;
+      row.appendChild(sel);
+      row.appendChild(info);
+      if (m.mode === 'ruled') {
+        const ed = document.createElement('button');
+        ed.className = 'btn ghost xs';
+        ed.textContent = S.editSeat === i ? 'editing…' : 'edit';
+        ed.addEventListener('click', () => openEditor(i));
+        row.appendChild(ed);
+      }
+      els.modelBox.appendChild(row);
+    });
+    // hero options
+    const hero = els.hero;
+    const cur = S.model.hero == null ? '' : String(S.model.hero);
+    hero.innerHTML = '<option value="">off</option>' +
+      S.positions.map((p, i) => `<option value="${i}">${p}</option>`).join('');
+    hero.value = cur;
+  }
+
+  async function seatSelect(i, sel) {
+    const v = sel.value;
+    const m = S.model.seats[i];
+    m.selValue = v;
+    try {
+      if (v === 'live') {
+        Object.assign(m, { mode: 'live', profile: null, implied: null, label: 'Solver' });
+      } else if (v === 'frozen') {
+        Object.assign(m, { mode: 'frozen', profile: null, implied: null, label: 'Frozen' });
+      } else if (v.startsWith('arch:')) {
+        if (lastIter < 1) {
+          toast('solve the unlocked game first — profiles distort that equilibrium', true);
+          sel.value = 'live';
+          return;
+        }
+        const a = ARCHETYPES[+v.slice(5)];
+        const out = await api.pfGenerate(i, a.stats, a.name);
+        Object.assign(m, { mode: 'ruled', profile: out.profile, implied: out.implied, label: a.name, stats: { ...a.stats } });
+      } else if (v.startsWith('saved:')) {
+        const prof = await api.pfProfileGet(v.slice(6));
+        Object.assign(m, { mode: 'ruled', profile: prof, implied: null, label: prof.name });
+      }
+    } catch (e) { toast(e.message, true); }
+    if (S.editSeat === i && m.mode !== 'ruled') closeEditor();
+    renderModel();
+    if (S.editSeat === i) openEditor(i);
+  }
+
+  els.applyBtn.addEventListener('click', async () => {
+    if (!S.model) return toast('build a game first', true);
+    try {
+      await api.pfTable(S.model.seats.map(m => ({
+        frozen: m.mode === 'frozen',
+        profile: m.mode === 'ruled' ? m.profile : null,
+      })));
+      if (S.model.hero != null) await api.pfHero(S.model.hero);
+      S.applied = S.model.seats.map(m => m.mode);
+      toast('model applied — RE-SOLVE to adapt the table' +
+        (S.model.hero != null ? ` (hero: ${S.positions[S.model.hero]} max-exploit)` : ''));
+      renderModel();
+      refresh(); // ribbon gets its lock badges
+    } catch (e) { toast(e.message, true); }
+  });
+
+  els.hero.addEventListener('change', async () => {
+    const v = els.hero.value;
+    S.model.hero = v === '' ? null : +v;
+    try {
+      await api.pfHero(S.model.hero);
+      toast(S.model.hero == null
+        ? 'hero off — all seats live again'
+        : `hero ${S.positions[S.model.hero]} — others frozen; SOLVE computes the exploit`);
+    } catch (e) { toast(e.message, true); }
+  });
+
+  // ----- profile editor (stats → generate → paint) -----
+
+  function closeEditor() {
+    S.editSeat = null;
+    els.editor.classList.add('hidden');
+    els.editor.innerHTML = '';
+  }
+
+  function openEditor(i) {
+    const m = S.model.seats[i];
+    if (m.mode !== 'ruled' || !m.profile) return;
+    S.editSeat = i;
+    S.editBucket = 0;
+    const st = m.stats || { vpip: 25, pfr: 18, threebet: 6, fold_to_3bet: 50, squeeze: 5, fourbet: null, flatten: 0.2, raise_size: 'min' };
+    els.editor.classList.remove('hidden');
+    els.editor.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <b style="font-size:12px">${S.positions[i]} — ${m.label}</b>
+        <button class="btn ghost xs" id="pfe-close">close</button>
+      </div>
+      <div class="field-grid" style="margin:6px 0">
+        <label>VPIP % <input id="pfe-vpip" type="number" value="${st.vpip}" min="1" max="100"></label>
+        <label>PFR % <input id="pfe-pfr" type="number" value="${st.pfr}" min="0" max="100"></label>
+        <label>3-bet % <input id="pfe-3b" type="number" value="${st.threebet}" min="0" max="100" step="0.5"></label>
+        <label>fold to 3-bet % <input id="pfe-f3b" type="number" value="${st.fold_to_3bet}" min="0" max="100"></label>
+        <label>squeeze % <input id="pfe-sq" type="number" value="${st.squeeze}" min="0" max="100" step="0.5"></label>
+        <label>position-blind <input id="pfe-flat" type="number" value="${st.flatten}" min="0" max="1" step="0.05"></label>
+        <label>raise size <select id="pfe-size"><option value="min">min</option><option value="max">max</option><option value="jam">jam</option></select></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="pfe-gen">GENERATE FROM STATS</button>
+        <span id="pfe-implied" class="mono dim" style="font-size:10px"></span>
+      </div>
+      <div class="seg" id="pfe-buckets" style="margin-top:8px">${
+        BUCKET_NAMES.map((n, k) => `<button data-b="${k}" class="${k === 0 ? 'active' : ''}">${n}</button>`).join('')
+      }</div>
+      <div class="pfl-gridbar" style="margin-top:6px">
+        <div class="seg pfl-palette" id="pfe-palette">
+          <button data-a="fold">FOLD</button><button data-a="call" class="active">CALL</button><button data-a="raise">RAISE</button><button data-a="jam">JAM</button>
+        </div>
+        <label class="dim" style="font-size:10px">weight <input id="pfe-w" type="range" min="5" max="100" value="100" style="width:70px;vertical-align:middle"> <span id="pfe-wv">100%</span></label>
+      </div>
+      <div id="pfl-paint" class="matrix browse"></div>
+      <div class="btn-row" style="margin-top:6px">
+        <input type="text" id="pfe-name" placeholder="save as…" value="${m.label}">
+        <button class="btn ghost" id="pfe-save">save profile</button>
+      </div>`;
+    document.getElementById('pfe-size').value = st.raise_size || 'min';
+    document.getElementById('pfe-close').addEventListener('click', closeEditor);
+    document.getElementById('pfe-gen').addEventListener('click', async () => {
+      const stats = {
+        vpip: +document.getElementById('pfe-vpip').value,
+        pfr: +document.getElementById('pfe-pfr').value,
+        threebet: +document.getElementById('pfe-3b').value,
+        fold_to_3bet: +document.getElementById('pfe-f3b').value,
+        squeeze: +document.getElementById('pfe-sq').value,
+        fourbet: null,
+        flatten: +document.getElementById('pfe-flat').value,
+        raise_size: document.getElementById('pfe-size').value,
+      };
+      try {
+        const out = await api.pfGenerate(i, stats, m.label);
+        Object.assign(m, { profile: out.profile, implied: out.implied, stats });
+        document.getElementById('pfe-implied').textContent =
+          `implied ${out.implied.vpip.toFixed(1)}/${out.implied.pfr.toFixed(1)}/${out.implied.threebet.toFixed(1)} · cont-vs-raise ${out.implied.cont_vs_raise.toFixed(0)}% · vs-3bet cont ${out.implied.cont_vs_3bet.toFixed(0)}%`;
+        paintBucket();
+        renderModel();
+      } catch (e) { toast(e.message, true); }
+    });
+    document.querySelectorAll('#pfe-buckets button').forEach(b =>
+      b.addEventListener('click', () => {
+        S.editBucket = +b.dataset.b;
+        document.querySelectorAll('#pfe-buckets button').forEach(x =>
+          x.classList.toggle('active', x === b));
+        paintBucket();
+      }));
+    document.querySelectorAll('#pfe-palette button').forEach(b =>
+      b.addEventListener('click', () => {
+        S.paintAction = b.dataset.a;
+        document.querySelectorAll('#pfe-palette button').forEach(x =>
+          x.classList.toggle('active', x === b));
+      }));
+    const w = document.getElementById('pfe-w');
+    w.addEventListener('input', () => {
+      S.paintWeight = +w.value / 100;
+      document.getElementById('pfe-wv').textContent = `${w.value}%`;
+    });
+    document.getElementById('pfe-save').addEventListener('click', async () => {
+      const name = document.getElementById('pfe-name').value.trim();
+      if (!name) return toast('give the profile a name', true);
+      try {
+        m.profile.name = name;
+        m.label = name;
+        await api.pfProfileSave(name, m.profile);
+        SAVED_PROFILES = await api.pfProfiles();
+        toast(`profile "${name}" saved — reusable on any game`);
+        renderModel();
+      } catch (e) { toast(e.message, true); }
+    });
+    buildPaintGrid();
+    if (m.implied) {
+      document.getElementById('pfe-implied').textContent =
+        `implied ${m.implied.vpip.toFixed(1)}/${m.implied.pfr.toFixed(1)}/${m.implied.threebet.toFixed(1)}`;
+    }
+    paintBucket();
+  }
+
+  let paintCells = [];
+  function buildPaintGrid() {
+    const g = document.getElementById('pfl-paint');
+    g.innerHTML = '';
+    paintCells = [];
+    for (let i = 0; i < 13; i++) {
+      for (let j = 0; j < 13; j++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.innerHTML = `<div class="bars"></div><div class="fill"></div><div class="tag">${cellInfo(i, j).label}</div><div class="sub"></div>`;
+        const idx = (12 - i) * 13 + (12 - j);
+        cell.addEventListener('mousedown', e => { e.preventDefault(); S.painting = true; paintClass(idx); });
+        cell.addEventListener('mouseenter', () => { if (S.painting) paintClass(idx); });
+        g.appendChild(cell);
+        paintCells.push(cell);
+      }
+    }
+    window.addEventListener('mouseup', () => { S.painting = false; }, { once: false });
+  }
+
+  function bucketPol() {
+    const m = S.model.seats[S.editSeat];
+    if (!m || !m.profile) return null;
+    let pol = m.profile.buckets[S.editBucket];
+    if (!pol) {
+      // take over a solver-played bucket: start from all-fold
+      pol = {
+        call: new Array(169).fill(0),
+        raise: new Array(169).fill(0),
+        jam: new Array(169).fill(0),
+        raise_size: (m.stats && m.stats.raise_size) || 'min',
+      };
+      m.profile.buckets[S.editBucket] = pol;
+    }
+    return pol;
+  }
+
+  function paintClass(idx) {
+    const pol = bucketPol();
+    if (!pol) return;
+    pol.call[idx] = 0;
+    pol.raise[idx] = 0;
+    pol.jam[idx] = 0;
+    if (S.paintAction !== 'fold') pol[S.paintAction][idx] = S.paintWeight;
+    paintBucket();
+  }
+
+  function paintBucket() {
+    const pol = bucketPol();
+    if (!pol) return;
+    for (let i = 0; i < 13; i++) {
+      for (let j = 0; j < 13; j++) {
+        const cell = paintCells[i * 13 + j];
+        const idx = (12 - i) * 13 + (12 - j);
+        const c = pol.call[idx] || 0, r = pol.raise[idx] || 0, jm = pol.jam[idx] || 0;
+        const f = Math.max(0, 1 - c - r - jm);
+        const bars = cell.querySelector('.bars');
+        bars.style.height = '100%';
+        bars.style.opacity = 1;
+        bars.innerHTML =
+          (r > 0.001 ? `<div style="width:${r * 100}%;background:${PCOLORS.raise}"></div>` : '') +
+          (jm > 0.001 ? `<div style="width:${jm * 100}%;background:${PCOLORS.jam}"></div>` : '') +
+          (c > 0.001 ? `<div style="width:${c * 100}%;background:${PCOLORS.call}"></div>` : '') +
+          (f > 0.001 ? `<div style="width:${f * 100}%;background:#20242a"></div>` : '');
+        cell.classList.toggle('empty', c + r + jm < 0.002);
+        cell.dataset.tip = `${cellInfo(i, j).label}: raise ${(r * 100).toFixed(0)}% · jam ${(jm * 100).toFixed(0)}% · call ${(c * 100).toFixed(0)}% · fold ${(f * 100).toFixed(0)}%`;
       }
     }
   }

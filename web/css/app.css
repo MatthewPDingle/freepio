@@ -756,6 +756,17 @@ textarea {
 .pfl-seat.cur { border-color: var(--accent); color: var(--ink); }
 #pfl-grid { max-width: 720px; }
 .pfl-gridbar { display: flex; align-items: center; gap: 14px; margin: 2px 0 6px; }
+.pfl-seatrow { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; }
+.pfl-seatrow b { width: 38px; color: var(--ink); font-family: var(--font-data); }
+.pfl-seatrow select { flex: 1; background: var(--panel2); color: var(--ink);
+  border: 1px solid var(--line2); border-radius: 3px; padding: 2px 4px; font-size: 11px; }
+.pfl-seatinfo { color: var(--ink-faint); font-size: 10px; white-space: nowrap; }
+#pfl-editor { margin: 8px 0; padding: 8px; background: var(--bg2);
+  border: 1px solid var(--line2); border-radius: 4px; }
+#pfl-editor .field-grid label { font-size: 10px; }
+.pfl-palette button.active { outline: 1px solid var(--accent); }
+#pfl-paint { max-width: 100%; margin-top: 6px; }
+#pfl-paint .cell { cursor: crosshair; }
 .pfl-btncol { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
 .pfl-btncol .btn { width: 100%; }
 #pfl-estimate.bad { color: #e8484c; }
