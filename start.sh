@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FREEPIO launcher — sets up the CUDA runtime path so the GPU solver engages
+# GTOpen launcher — sets up the CUDA runtime path so the GPU solver engages
 # (without it the server silently falls back to CPU), then starts the server.
 set -euo pipefail
 cd "$(dirname "$0")"

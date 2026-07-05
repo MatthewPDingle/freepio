@@ -1,7 +1,7 @@
-/* FREEPIO — precision-instrument dark UI */
+/* GTOpen — precision-instrument dark UI */
 
 :root {
-  /* GTO Wizard-style neutral dark theme */
+  /* neutral dark theme */
   --bg: #141414;
   --bg2: #1a1a1a;
   --panel: #1f1f1f;
@@ -17,7 +17,7 @@
   --green: #43984a;
   --blue: #3d86c6;
 
-  /* GTO Wizard strategy colors */
+  /* strategy colors */
   --c-fold: #4a78c8;
   --c-check: #5ca75f;
   --c-call: #5ca75f;
@@ -238,7 +238,7 @@ textarea {
 .cell.empty { background: #131313; }
 .cell.empty .tag { color: var(--ink-dim); text-shadow: 0 1px 2px rgba(0,0,0,.7); }
 
-/* range weights use GTO Wizard's "Range" orange */
+/* range weights use the range-editor orange */
 .matrix.editor .cell .fill { background: linear-gradient(180deg, #f89c3a, #e07d18); }
 .matrix.editor .cell .tag { font-size: 12px; }
 .matrix.editor .cell .sub { font-size: 10px; }
@@ -270,7 +270,7 @@ textarea {
 .suit-d { color: #5b8fd6; }
 .suit-c { color: #2eaf63; }
 
-/* GTO Wizard-style cards: suit-colored tile, big white rank,
+/* Card chips: suit-colored tile, big white rank,
    oversized darker suit pip in the corner */
 .bcard {
   position: relative;
@@ -361,7 +361,7 @@ textarea {
   padding: 6px 0 10px;
 }
 
-/* GTO Wizard-style action history bar */
+/* action history bar */
 #history-wrap { display: flex; align-items: stretch; gap: 3px; padding: 6px 0 2px; }
 #history-bar {
   flex: 1; min-width: 0;
@@ -415,7 +415,7 @@ textarea {
   padding: 6px 14px; cursor: pointer;
 }
 .seg button.active { background: var(--accent-soft); color: var(--accent); }
-/* GTO Wizard-style cell-display menu */
+/* cell-display menu */
 .view-menu-wrap { position: relative; }
 .view-menu-btn {
   font-family: var(--font-disp); font-weight: 700; font-size: 11px; letter-spacing: .08em;
@@ -450,7 +450,7 @@ textarea {
 }
 .legend .key i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
 
-/* GTO Wizard-style action tiles (display + grid filter) */
+/* action tiles (display + grid filter) */
 .act-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(102px, 1fr)); gap: 5px; }
 .act-tile {
   position: relative; border-radius: 5px; padding: 7px 9px 8px; min-height: 62px;
@@ -505,7 +505,7 @@ textarea {
 .combo-row.head .ro-sort:hover { color: var(--ink); }
 .combo-row.head .ro-sort.sorted { color: var(--accent); }
 
-/* GTO Wizard-style hover hands panel */
+/* hover hands panel */
 .browse-right { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 
 .hands-tabs { display: flex; align-items: center; gap: 2px; margin-bottom: 7px; border-bottom: 1px solid var(--line); padding-bottom: 5px; flex-wrap: wrap; }
@@ -533,7 +533,7 @@ textarea {
 }
 .hand-tile .hth .meta { font-size: 9px; color: var(--ink-dim); font-weight: 400; letter-spacing: .06em; }
 
-/* horizontal strategy split with label/EV lines overlaid (GTO Wizard style) */
+/* horizontal strategy split with label/EV lines overlaid */
 .htb-h { position: relative; height: 132px; }
 .htb-h.short { height: 88px; }
 .hseg-row { position: absolute; inset: 0; display: flex; }

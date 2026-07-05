@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FREEPIO — GTO Solver</title>
+<title>GTOpen — Poker Solver</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -12,7 +12,7 @@
 <body>
 <div id="app">
   <header id="topbar">
-    <div class="wordmark">FREE<span>PIO</span><em>gto solver</em></div>
+    <div class="wordmark"><span>GTO</span>pen<em>open-source solver</em></div>
     <nav id="tabs">
       <button class="tab active" data-tab="preflop">00 · PREFLOP LAB</button>
       <button class="tab" data-tab="setup">01 · SETUP</button>
@@ -50,7 +50,7 @@
               <button id="range-clear" class="btn ghost" data-tip="Remove every hand from this player's range.">clear</button>
               <button id="range-all" class="btn ghost" data-tip="Add all 1326 combos at 100% — useful as a starting point before pruning.">fill 100%</button>
             </div>
-            <textarea id="range-text" spellcheck="false" data-tip="PioSolver-style range text. Examples: AA · TT+ · A5s-A2s · 99-66 · ATs+ · KQo · AhKh (exact combo) · QQ:0.5 (50% weight). Comma-separated; later entries overwrite earlier ones." placeholder="AA,AKs,KQs:0.5,A5s-A2s,JJ-88…"></textarea>
+            <textarea id="range-text" spellcheck="false" data-tip="Range text. Examples: AA · TT+ · A5s-A2s · 99-66 · ATs+ · KQo · AhKh (exact combo) · QQ:0.5 (50% weight). Comma-separated; later entries overwrite earlier ones." placeholder="AA,AKs,KQs:0.5,A5s-A2s,JJ-88…"></textarea>
             <div class="btn-row">
               <button id="range-apply-text" class="btn" data-tip="Parse the text above and load it onto the grid (replaces hands it mentions).">apply text</button>
               <span id="range-combo-count" class="mono dim" data-tip="Total weighted combos in this range (AKs = 4, AKo = 12, AA = 6, before any board card removal).">0 combos</span>
@@ -109,7 +109,7 @@
         <div id="tree-summary" class="mono dim"></div>
         <div id="mem-info" class="mono dim" data-tip="Estimated peak memory for this solve. RAM is the CPU solver arena; VRAM is the GPU estimate. A spot whose VRAM exceeds the cap (SOLVER_GPU_MEM_MB, default 20 GB) automatically falls back to the CPU."></div>
         <div id="compute-info" class="mono"></div>
-        <h2 style="margin-top:24px">Persistence <span class="info-dot" data-tip="Saves write the full solution to ./saves/ on disk so you can come back to it after closing the app — like Pio's .cfr files. Loading replaces the current session.">?</span></h2>
+        <h2 style="margin-top:24px">Persistence <span class="info-dot" data-tip="Saves write the full solution to ./saves/ on disk so you can come back to it after closing the app. Loading replaces the current session.">?</span></h2>
         <div class="btn-row">
           <input type="text" id="save-name" placeholder="save name…">
           <button id="btn-save" class="btn" data-tip="Write the current solve (tree + strategies) to disk.">save</button>

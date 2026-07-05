@@ -58,7 +58,14 @@ $('range-apply-text').addEventListener('click', () => editor.applyText());
 
 // Range presets are Preflop Lab exports: each one restores both ranges,
 // pot, stack and rake in one click (SEND TO POSTFLOP creates them).
-const pflSpots = () => JSON.parse(localStorage.getItem('freepio-pfl-spots') || '[]');
+// one-time rebrand migration: carry saved lab spots / last config over
+for (const [o, n] of [['freepio-pfl-spots', 'gtopen-pfl-spots'],
+                      ['freepio-last-spot', 'gtopen-last-spot']]) {
+  if (localStorage.getItem(o) != null && localStorage.getItem(n) == null) {
+    localStorage.setItem(n, localStorage.getItem(o));
+  }
+}
+const pflSpots = () => JSON.parse(localStorage.getItem('gtopen-pfl-spots') || '[]');
 
 function refreshPresetDropdown() {
   const sel = $('preset-select');
@@ -283,7 +290,7 @@ $('btn-build').addEventListener('click', async () => {
     } else {
       browser.preflop = null;
     }
-    localStorage.setItem('freepio-last-spot', JSON.stringify(cfg));
+    localStorage.setItem('gtopen-last-spot', JSON.stringify(cfg));
     const summary = `${info.nodes.toLocaleString()} nodes · ${info.action_nodes.toLocaleString()} decision points · ` +
       `hands ${info.hands_oop}/${info.hands_ip}`;
     $('build-info').textContent = `${summary} · ${memSummary(info)}`;
@@ -599,7 +606,7 @@ initPreflopLab({
     ex.name = `${ex.oop_pos} vs ${ex.ip_pos} \u00b7 ${ex.pot_bb}bb pot \u00b7 ${lineText}`;
     const spots = pflSpots().filter(sp => sp.name !== ex.name);
     spots.unshift(ex);
-    localStorage.setItem('freepio-pfl-spots', JSON.stringify(spots.slice(0, 20)));
+    localStorage.setItem('gtopen-pfl-spots', JSON.stringify(spots.slice(0, 20)));
     refreshPresetDropdown();
     await applyExportedSpot(ex);
   },
@@ -607,7 +614,7 @@ initPreflopLab({
 
 // restore last config if present
 try {
-  const saved = JSON.parse(localStorage.getItem('freepio-last-spot') || 'null');
+  const saved = JSON.parse(localStorage.getItem('gtopen-last-spot') || 'null');
   if (saved) {
     $('cfg-pot').value = saved.starting_pot;
     $('cfg-stack').value = saved.effective_stack;

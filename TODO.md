@@ -1,6 +1,6 @@
 # TODO
 
-Work queue for FREEPIO. Items are written so a fresh contributor (human or
+Work queue for GTOpen. Items are written so a fresh contributor (human or
 Claude) can execute them without prior context. Read `README.md` first for
 the architecture; run `cargo test --release -p solver` (all green, ~5 min on
 a laptop) before and after any change.
@@ -72,7 +72,7 @@ SPR, suited/connected > offsuit-junk at equal equity.
   (`web/js/preflop_lab.js` `config()` currently hardcodes `'static'`).
 - Validation: HU push/fold anchors must not move (all-in terminals bypass
   R); re-run the BB-defend-vs-2.5x threshold example and report before/after
-  vs GTO Wizard's BB defend range; add a regression test asserting the
+  vs a commercial solver's published BB defend range; add a regression test asserting the
   calibrated table's monotonicities.
 - Optional round 2: re-export lab spots under calibrated R and refit once
   (fixed-point loop; expected to settle immediately — R shifts thresholds
@@ -150,7 +150,7 @@ True preflop solving for 2 players (SB vs BB): preflop street + flop chance
 node fanning into a weighted canonical-flop subset (~50–95 boards), each
 continuing into deliberately small postflop trees, solved as ONE game by the
 existing 2-player DCFR engine (`cfr.rs`) — all convergence guarantees hold.
-This is PioSolver's preflop module rebuilt on freepio. Blind-vs-blind limp
+This is classic full-game preflop solving built on GTOpen. Blind-vs-blind limp
 trees at any sizing, exact (no realization model). Big lift: the tree
 builder (`tree.rs`) assumes a fixed board; needs a preflop street + flop
 chance layer, and memory planning (each flop subtree ≈ a current spot;
@@ -193,5 +193,13 @@ Validate against item 1's data and published HU charts.
 - **Unequal stacks in the Preflop Lab**: `PreflopConfig.stack` is a single
   value (no side pots by design). Support per-seat stacks + side-pot-aware
   terminals if short-stack study becomes interesting.
-- **GTO Wizard range import**: paste-parse GTOW's copy format into the
-  range editor (mostly compatible with the existing text syntax already).
+- **External range import**: paste-parse the copy formats of popular
+  solvers/trainers into the range editor (mostly compatible with the
+  existing text syntax already).
+- **Size-sensitive fold-vs-bet**: postflop profiles use ONE fold-vs-bet
+  number per street regardless of the size faced, but real players fold
+  more to pot-sized bets than to 33% stabs. Add per-size anchors (e.g.
+  fold-vs-33% / fold-vs-100%, interpolated by the actual size at each
+  node) in `lock_profile`'s target construction. Same family as the
+  preflop fold-to-4bet split — build either when a real opponent's reads
+  demand it.

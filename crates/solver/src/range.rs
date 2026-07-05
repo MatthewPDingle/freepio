@@ -1,4 +1,4 @@
-//! Range parsing and formatting (PioSolver-compatible syntax).
+//! Range parsing and formatting (standard solver text syntax: AA, ATs+, QQ:0.5).
 //!
 //! Supported tokens (comma or whitespace separated, each with optional `:weight`):
 //! - Pairs: `AA`, `TT+`, `99-66`

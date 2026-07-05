@@ -1,4 +1,4 @@
-//! Solver data storage: plain f32 arenas, or PioSolver-style compressed
+//! Solver data storage: plain f32 arenas, or compressed
 //! 16-bit arenas with one scale factor per node.
 //!
 //! Compressed mode stores cumulative regrets as i16 and cumulative strategy
@@ -70,7 +70,7 @@ impl<T: Copy + Default> ArenaBuf<T> {
 pub enum Storage {
     /// Full-precision f32: 4 bytes per entry.
     F32,
-    /// 16-bit quantized entries with one f32 scale per node (PioSolver-style):
+    /// 16-bit quantized entries with one f32 scale per node:
     /// regrets as i16, strategy sums as u16. 2 bytes per entry.
     Compressed,
 }

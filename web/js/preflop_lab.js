@@ -1,6 +1,6 @@
 // PREFLOP LAB — UI for the multiway preflop solver (equity-model postflop).
 // Build a game (any limps/sizes/players), solve it, walk the action tree with
-// a GTO Wizard-style ribbon, and export any heads-up flop node straight into
+// an action ribbon, and export any heads-up flop node straight into
 // the postflop solver's SETUP.
 
 import { api } from './api.js';

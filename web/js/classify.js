@@ -1,4 +1,4 @@
-// Hand-category classification for the Filters tab (GTO Wizard style):
+// Hand-category classification for the Filters tab:
 // made-hand tiers, draw types, and equity buckets.
 
 import { rank, suit } from './cards.js';

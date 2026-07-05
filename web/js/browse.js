@@ -7,13 +7,13 @@ import { api, toast } from './api.js';
 import { classify, suitTags, MADE_LABELS, MADE_ORDER, DRAW_LABELS, DRAW_ORDER,
          EQS_LABELS, EQA_LABELS } from './classify.js';
 
-// GTO Wizard default palette.
+// Strategy color palette.
 const ACTION_COLORS = {
   fold: '#4a78c8',
   check: '#5ca75f',
   call: '#5ca75f',
 };
-// Bet/raise reds by size category (GTOW: Small / Medium / Large / Overbet),
+// Bet/raise reds by size category (Small / Medium / Large / Overbet),
 // classified by the wager as a fraction of the pot.
 const BET_SHADES = {
   small: '#e8484c',
@@ -21,7 +21,7 @@ const BET_SHADES = {
   large: '#a23a3c',
   overbet: '#7c3134',
 };
-// GTO Wizard player colors: OOP light cyan, IP green.
+// Player colors: OOP light cyan, IP green.
 const EQ_COLORS = ['#8edced', '#46b556'];
 // Equity chart margins (CSS px).
 const EQ_M = { L: 38, R: 10, T: 12, B: 24 };
@@ -219,7 +219,7 @@ export class Browser {
     return computeActionColors(this.view.actions, this.view.pot);
   }
 
-  // ----- GTO Wizard-style action history bar -----
+  // ----- action history bar -----
 
   /** Reset the line + cursor (call when a new spot is built/loaded). */
   reset() {
@@ -418,7 +418,7 @@ export class Browser {
           if (h.evs && h.evs[a] != null) { evs[a].n += h.evs[a] * h.reach * s; evs[a].d += h.reach * s; }
         });
       });
-      // GTO Wizard-style action tiles. Navigation lives in the history ribbon;
+      // Action tiles. Navigation lives in the history ribbon;
       // clicking a tile filters the grid to that action's range instead.
       const tiles = document.createElement('div');
       tiles.className = 'act-tiles';
@@ -981,7 +981,7 @@ export class Browser {
       return `hsl(${(t * 130).toFixed(0)} 70% 50%)`;
     };
     const eqColor = (eq) => `hsl(${(eq * 130).toFixed(0)} 75% 52%)`;
-    // render each combo as its own bottom-anchored vertical column (GTOW style)
+    // render each combo as its own bottom-anchored vertical column
     const renderCols = (bars, fill, sub, list, colorFn, aggText) => {
       fill.style.opacity = 0;
       if (!list.length) { bars.style.opacity = 0; sub.textContent = ''; return; }
@@ -1085,11 +1085,11 @@ export class Browser {
             bars.appendChild(d);
           });
           // Discrete action colors at full opacity. How much of this hand
-          // reaches the node is shown as vertical fill height (GTO Wizard
+          // reaches the node is shown as vertical fill height ("Range
           // style), bottom-anchored — not by dimming the colors.
           bars.style.opacity = agg.reach > 1e-9 ? 1 : 0;
           bars.style.height = `${(intensity * 100).toFixed(1)}%`;
-          // GTO Wizard "Strategy + EV": show the hand's EV in the cell corner
+          // "Strategy + EV" display: the hand's EV in the cell corner
           sub.textContent =
             agg.ev != null && agg.reach > 1e-9 ? fmt(agg.ev) : '';
         } else if (effMode === 'strategy') {
@@ -1168,7 +1168,7 @@ export class Browser {
     }
   }
 
-  // ----- GTO Wizard-style hands panel (hover-driven) -----
+  // ----- hands panel (hover-driven) -----
 
   selectCell(i, j) {
     // click pins/unpins a cell so it stays after the mouse leaves the matrix
@@ -1280,8 +1280,8 @@ export class Browser {
   }
 
   // Shared by the HANDS tab and the grid-hover popup: gather a cell's
-  // in-deck combos. ALL of them are shown (GTO Wizard does the same, and
-  // dropping combos skews the SUMMARY stats); combos that barely reach this
+  // in-deck combos. ALL of them are shown (dropping combos would skew the
+  // SUMMARY stats); combos that barely reach this
   // node — e.g. a suit that folded out on an earlier street keeps a tiny
   // non-zero reach — are dimmed rather than hidden, judged relative to the
   // busiest combo of the SAME hand.
@@ -1309,7 +1309,7 @@ export class Browser {
   }
 
   handTilesHtml({ cand, minReach, isActor, colors, acts }) {
-    // GTO Wizard layout: 2 columns up to 4 combos, 3 columns beyond.
+    // Layout: 2 columns up to 4 combos, 3 columns beyond.
     const cols3 = cand.length > 4;
     const tiles = cand.map(([h, a, b, m]) =>
       this.handTile(h, a, b, isActor, colors, acts, cols3,
@@ -1351,7 +1351,7 @@ export class Browser {
     const meta = `${h.eq != null ? (h.eq * 100).toFixed(0) + '% eq · ' : ''}EV`;
     let body;
     if (isActor && h.strategy) {
-      // Horizontal split, aggressive actions on the left (GTO Wizard style);
+      // Horizontal split, aggressive actions on the left;
       // action labels with EVs overlaid bottom-left/right.
       const segs = [];
       const lines = [];
@@ -1376,7 +1376,7 @@ export class Browser {
     return `<div class="hand-tile${dimmed ? ' fdim' : ''}"><div class="hth"><span>${name}</span><span class="meta">${meta}</span></div>${body}</div>`;
   }
 
-  // ----- Filters tab (GTO Wizard style) -----
+  // ----- Filters tab -----
 
   renderFiltersPanel(content) {
     const p = this.player;
@@ -1499,7 +1499,7 @@ export class Browser {
   }
 
 
-  // ----- equity distribution chart (GTO Wizard style) -----
+  // ----- equity distribution chart -----
 
   buildEqCurves() {
     this.eqCurves = [0, 1].map(p => {
@@ -1654,7 +1654,7 @@ export class Browser {
     }
   }
 
-  // ----- Blockers tab (GTO Wizard style) -----
+  // ----- Blockers tab -----
 
   renderBlockersPanel(content) {
     const p = this.player;

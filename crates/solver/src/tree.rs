@@ -1,4 +1,4 @@
-//! Game tree construction from a PioSolver-style configuration.
+//! Game tree construction from the spot configuration (board, ranges, sizes).
 //!
 //! Streets are indexed 0 = flop, 1 = turn, 2 = river. Players: 0 = OOP, 1 = IP.
 //! All chip amounts are tracked as f64 during construction.
@@ -79,7 +79,7 @@ pub struct TreeConfig {
     pub oop: [StreetSizing; 3],
     pub ip: [StreetSizing; 3],
     /// If a bet/raise commits more than this fraction of the player's total
-    /// stack, it becomes all-in instead (Pio's "all-in threshold"). 1.0
+    /// stack, it becomes all-in instead (the "all-in threshold"). 1.0
     /// disables the conversion except for exact overshoots.
     #[serde(default = "default_allin_threshold")]
     pub allin_threshold: f64,

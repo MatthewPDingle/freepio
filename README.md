@@ -1,10 +1,11 @@
-# FREEPIO — a PioSolver-style GTO poker solver
+# GTOpen — an open-source GTO poker solver
 
-A from-scratch heads-up no-limit hold'em postflop solver with a local web UI.
+A from-scratch no-limit hold'em solver with a local web UI: heads-up
+postflop CFR, a multiway Preflop Lab, and player profiling/exploitation.
 Rust solver core (discounted CFR), optional CUDA GPU engine, zero-install
 browser frontend.
 
-![solver tests](https://img.shields.io/badge/tests-32%20passing-success)
+![solver tests](https://img.shields.io/badge/tests-42%20passing-success)
 
 ![Browse — mid-hand on the turn](docs/browse-midhand.png)
 *Mid-hand in BROWSE: bet–call on K♠7♥2♦ to the Q♥ turn — action ribbon,
@@ -58,7 +59,7 @@ Optional environment:
 | `PREFLOP_MAX_NODES` | RAM-derived | Preflop Lab tree-size limit; the lab shows a live estimate + this machine's caps before BUILD |
 | `PREFLOP_MAX_ARENA_MB` | ~40% of free RAM | Preflop Lab regret/strategy memory limit (MB) |
 
-## Workflow (mirrors PioSolver)
+## Workflow
 
 0. **PREFLOP LAB** (optional) — solve the preflop game first (limps, any
    sizes, 2–9 players; see below), walk the line you care about, and **SEND
@@ -72,7 +73,7 @@ Optional environment:
    multiple), then **BUILD TREE**. The build reports node count and exact
    solver memory before you commit to solving.
 2. **SOLVE** — set a target exploitability (% of pot; 0.3% is a typical
-   "Pio-quality" target), watch the live convergence chart. Stop/resume any
+   study-quality target), watch the live convergence chart. Stop/resume any
    time; save/load full solves to disk.
 3. **BROWSE** — walk any line with breadcrumbs. The matrix shows strategy
    stacked-bars (blue fold / green check-call / amber→red bets by size),
@@ -97,7 +98,7 @@ Optional environment:
 - **Algorithm**: Discounted CFR (α=1.5, β=0, γ=2) with alternating updates,
   vectorized over hands. CFR+ and Predictive CFR+ (PCFR+) are selectable per
   solve (`POST /api/solve {"algorithm": "pcfr+"}` or `SOLVER_ALGO` in the CLI).
-- **Compressed arenas (PioSolver-style)**: regrets stored as i16 and strategy
+- **Compressed arenas (16-bit)**: regrets stored as i16 and strategy
   sums as u16, quantized per node against the node's max magnitude — half the
   memory of f32, and faster on big trees because CFR is memory-bandwidth
   bound. Verified equivalent to f32 within 0.1% pot exploitability by test;
@@ -133,7 +134,7 @@ Optional environment:
   non-isomorphic solver). Zero-reach subtrees are also pruned exactly.
 - **Trees**: per-street/per-player bet, raise and (OOP) donk sizes, all-in
   threshold conversion, raise caps, NL min-raise rules, rake (% + cap),
-  flop/turn/river root. EVs use Pio's pot-share convention (EV OOP + EV IP =
+  flop/turn/river root. EVs use the pot-share convention (EV OOP + EV IP =
   pot).
 - **Accuracy tests** (`cargo test -p solver --release`): hand evaluator vs an
   independent reference on 20k random deals; range parser round-trips; the
@@ -208,7 +209,7 @@ action index, `c<card>` = dealt card).
 
 The **00 · PREFLOP LAB** tab solves N-player (2–9) preflop trees exactly at
 the action level — **limps, cold calls, any raise sizes, antes, rake** — the
-spots GTO Wizard's fixed libraries can't express. Postflop play is priced by
+spots fixed preset libraries can't express. Postflop play is priced by
 a model instead of solved: at flop terminals each live player's share is
 `pot × multiway-equity × R`, with R a pluggable realization factor ("raw" or
 positional-vs-SPR "static"); all-in terminals are model-exact. Hands are the
@@ -252,13 +253,13 @@ fallback to CPU + system RAM when the game exceeds free VRAM or CUDA
 errors. First time on a GPU machine, validate the kernels:
 `cargo test --release --features gpu --test preflop_gpu -- --test-threads=1`.
 
-## Differences from PioSolver (known gaps)
+## Known gaps
 
 - No multi-flop aggregated reports (single-board runouts reports only; batch
   solving is possible via the CLI/API).
 - Preflop is solved against an equity-realization model (see Preflop Lab),
   not full-game trees; postflop solving is heads-up only. No ICM.
-- Saves are not .cfr-compatible (own format).
+- Saves use GTOpen's own format (not portable to other solvers).
 
 ## Layout
 
