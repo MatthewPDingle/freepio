@@ -43,6 +43,9 @@ fn gpu_matches_cpu() {
     let eq = table();
     let mut cpu = PreflopSolver::new(hu25(), eq.clone()).unwrap();
     let mut gs = PreflopSolver::new(hu25(), eq).unwrap();
+    // the GPU mirrors the UNPRUNED traversal bit-for-bit
+    cpu.prune = false;
+    gs.prune = false;
     let mut g = PreflopGpu::new(&gs, 8_000).expect("gpu init");
 
     for _ in 0..300 {

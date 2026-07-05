@@ -205,6 +205,12 @@ impl Arena {
 /// Fan subtrees across threads down to this depth; below it recursion is
 /// sequential (tasks get too small to be worth scheduling).
 const PAR_DEPTH: u32 = 7;
+/// Regret-based pruning (Brown & Sandholm lineage): zero-mass actions'
+/// subtrees are skipped. The traverser's own dead actions still get a full
+/// refresh pass every PRUNE_REFRESH iterations so they can revive (DCFR's
+/// beta=0 decays their negative regrets toward zero in the meantime).
+const PRUNE_REFRESH: u32 = 8;
+const PRUNE_WARMUP: u32 = 32;
 
 pub struct PreflopSolver {
     pub cfg: PreflopConfig,
@@ -216,6 +222,9 @@ pub struct PreflopSolver {
     strat_sum: Arena,
     arena_len: usize,
     pub iteration: u32,
+    /// Regret-based pruning of zero-mass action subtrees (PREFLOP_PRUNE=0
+    /// disables; tests that mirror traversals bit-for-bit turn it off).
+    pub prune: bool,
     /// Frozen seats play their current average strategy and stop adapting.
     pub seat_frozen: Vec<bool>,
     /// Ruled seats play their profile in covered buckets.
@@ -253,6 +262,7 @@ impl PreflopSolver {
             strat_sum: Arena::new(0),
             arena_len: 0,
             iteration: 0,
+            prune: std::env::var("PREFLOP_PRUNE").map(|v| v != "0").unwrap_or(true),
             seat_frozen: vec![false; n],
             seat_profiles: vec![None; n],
             point_locks: std::collections::HashMap::new(),
@@ -683,6 +693,39 @@ impl PreflopSolver {
             _ => sigma.copy_from_slice(&self.average_strategy(node)),
         }
 
+        // Regret-based pruning: an action with zero CURRENT mass for every
+        // class contributes exactly zero here (every terminal below sees
+        // zero reach from this actor, and the traverser's regret deltas
+        // inside are zero), so the subtree can be skipped — EXCEPT where
+        // the traversal needs it anyway: the traverser's own regret
+        // refresh (periodic, so pruned actions can revive) and mode 2,
+        // where best response deviates INTO zero-mass actions by design.
+        // Strategy sums inside a pruned subtree go stale; those nodes are
+        // unreachable under the current strategies (off-path).
+        let updates_here = mode == 0 && forced.is_none() && !frozen;
+        let skipped: Vec<bool> = if self.prune && na > 1 {
+            (0..na)
+                .map(|a| {
+                    if actor == p {
+                        if mode == 2 {
+                            return false;
+                        }
+                        if updates_here
+                            && (self.iteration < PRUNE_WARMUP
+                                || self.iteration % PRUNE_REFRESH == 0)
+                        {
+                            return false;
+                        }
+                    }
+                    sigma[a * NUM_CLASSES..(a + 1) * NUM_CLASSES]
+                        .iter()
+                        .all(|&x| x == 0.0)
+                })
+                .collect()
+        } else {
+            vec![false; na]
+        };
+
         // whose reach scales into the children (p at own nodes for the
         // strat-sum weighting; the actor's otherwise)
         let scaled = if actor == p { p } else { actor };
@@ -691,6 +734,9 @@ impl PreflopSolver {
             (0..na)
                 .into_par_iter()
                 .map(|a| {
+                    if skipped[a] {
+                        return vec![0f32; NUM_CLASSES];
+                    }
                     let mut r: Vec<Vec<f32>> = base.to_vec();
                     for h in 0..NUM_CLASSES {
                         r[scaled][h] = base[scaled][h] * sigma[a * NUM_CLASSES + h];
@@ -703,6 +749,10 @@ impl PreflopSolver {
             let saved = reaches[scaled].clone();
             let mut vals = Vec::with_capacity(na);
             for a in 0..na {
+                if skipped[a] {
+                    vals.push(vec![0f32; NUM_CLASSES]);
+                    continue;
+                }
                 for h in 0..NUM_CLASSES {
                     reaches[scaled][h] = saved[h] * sigma[a * NUM_CLASSES + h];
                 }
@@ -732,11 +782,14 @@ impl PreflopSolver {
                 }
                 out[h] = v;
             }
-            if mode == 0 && forced.is_none() && !frozen {
+            if updates_here {
                 // SAFETY: this node belongs to exactly one subtree of any
                 // enclosing parallel fan-out (see Arena)
                 unsafe {
                     for (a, va) in vals.iter().enumerate() {
+                        if skipped[a] {
+                            continue; // pruned: no counterfactual values this pass
+                        }
                         for h in 0..NUM_CLASSES {
                             self.regrets
                                 .add(data_off + a * NUM_CLASSES + h, va[h] - out[h]);
@@ -766,9 +819,26 @@ impl PreflopSolver {
             .collect()
     }
 
+    /// A frozen or fully-ruled seat's own traversal writes nothing (every
+    /// regret/strategy update is gated off), so iterate() skips it outright
+    /// — exact, and worth ~seat-count x in hero mode where everyone else is
+    /// frozen.
+    fn seat_static(&self, p: usize) -> bool {
+        self.seat_frozen[p]
+            || self.seat_profiles[p]
+                .as_ref()
+                .map(|prof| {
+                    (0..NUM_BUCKETS).all(|b| prof.buckets.get(b).map_or(false, |x| x.is_some()))
+                })
+                .unwrap_or(false)
+    }
+
     pub fn iterate(&mut self) {
         self.iteration += 1;
         for p in 0..self.n {
+            if self.seat_static(p) {
+                continue;
+            }
             let mut reaches = self.root_reaches();
             self.traverse(0, p, &mut reaches, 0, 0);
         }
