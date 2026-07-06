@@ -311,6 +311,87 @@ export function initPreflopLab({ els, onExport, toast, gotoSetup }) {
     api.pfStop().catch(() => {});
   });
 
+  // ----- saved games: full session snapshots on disk -----
+
+  async function refreshSavedGames() {
+    try {
+      const list = await api.pfSavedGames();
+      els.savedSel.innerHTML = '<option value="">load a saved game…</option>' +
+        list.map(n => `<option>${n}</option>`).join('');
+    } catch { /* server not up yet */ }
+  }
+  refreshSavedGames();
+
+  els.saveGame.addEventListener('click', async () => {
+    if (!S.built || lastIter < 1) return toast('solve something first — a save stores the solved strategies', true);
+    const def = `${S.positions.length}-max ${els.stack.value}bb iter${lastIter}`;
+    const name = window.prompt('save game as…', def);
+    if (!name || !name.trim()) return;
+    els.saveGame.disabled = true;
+    try {
+      const out = await api.pfSaveGame(name.trim());
+      toast(`game saved — "${name.trim()}" (iter ${out.iteration})`);
+      refreshSavedGames();
+    } catch (e) { toast(e.message, true); }
+    finally { els.saveGame.disabled = false; }
+  });
+
+  els.savedSel.addEventListener('change', async () => {
+    const name = els.savedSel.value;
+    els.savedSel.value = '';
+    if (!name) return;
+    progressDock(els.build);
+    progressSet(40, `loading “${name}”…`);
+    try {
+      const out = await api.pfLoadGame(name);
+      applyLoadedGame(name, out);
+      progressSet(100, 'loaded ✓');
+      setTimeout(() => { if (S.lastState !== 'running') progressHide(); }, 1500);
+    } catch (e) { progressHide(); toast(e.message, true); }
+  });
+
+  /** Restore the whole lab session from a loaded game: config form, built
+   *  state, seat models (profiles/frozen), and the solved tree view. */
+  function applyLoadedGame(name, out) {
+    const cfg = out.config;
+    els.players.value = cfg.positions.length;
+    els.stack.value = cfg.stack;
+    els.opens.value = (cfg.open_raises || []).join(',');
+    els.mult.value = (cfg.raise_mults || []).join(',');
+    els.maxRaises.value = cfg.max_raises;
+    els.limp.checked = !!cfg.limp;
+    els.allin.checked = !!cfg.add_allin;
+    els.ante.value = cfg.ante || 0;
+    els.rakePct.value = cfg.rake_pct || 0;
+    els.rakeCap.value = cfg.rake_cap || 0;
+    S.built = true;
+    S.builtCfg = JSON.stringify(config());
+    S.positions = cfg.positions;
+    S.cursor = [];
+    S.lineP = [];
+    S.lineHist = null;
+    S.model = {
+      seats: (out.seats || []).map(st => st.profile
+        ? { mode: 'ruled', profile: st.profile, implied: null, label: st.profile.name,
+            postflop: st.profile.postflop || null, selValue: `saved:${st.profile.name}` }
+        : st.frozen
+          ? { mode: 'frozen', profile: null, implied: null, label: 'Frozen', selValue: 'frozen' }
+          : { mode: 'live', profile: null, implied: null, label: 'Solver', selValue: 'live' }),
+      hero: null,
+    };
+    S.applied = S.model.seats.map(m => m.mode);
+    S.lastGaps = null;
+    closeEditor();
+    renderModel();
+    lastIter = out.iteration;
+    els.buildInfo.textContent =
+      `${out.nodes.toLocaleString()} nodes · ${out.arena_mb.toFixed(0)} MB · loaded “${name}” at iter ${out.iteration}`;
+    updateEstimate();
+    startPolling();
+    refresh();
+    toast(`loaded “${name}” — iter ${out.iteration}; RE-SOLVE continues converging`);
+  }
+
   function startPolling() {
     if (S.polling) clearInterval(S.polling);
     S.polling = setInterval(poll, 1000);

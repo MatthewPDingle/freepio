@@ -35,6 +35,9 @@ export const api = {
   pfProfiles: () => req('GET', '/api/preflop/profiles'),
   pfProfileSave: (name, profile) => req('POST', '/api/preflop/profiles/save', { name, profile }),
   pfProfileGet: name => req('POST', '/api/preflop/profiles/get', { name }),
+  pfSaveGame: name => req('POST', '/api/preflop/save', { name }),
+  pfLoadGame: name => req('POST', '/api/preflop/load', { name }),
+  pfSavedGames: () => req('GET', '/api/preflop/saves'),
   lock: (path, mode, label) => req('POST', '/api/lock', { path, mode, label }),
   profileLocks: (player, stats, aggressor) =>
     req('POST', '/api/profile_locks', { player, stats, aggressor }),

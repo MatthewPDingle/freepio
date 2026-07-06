@@ -988,6 +988,104 @@ async fn profile_locks_clear(
     Ok(Json(serde_json::json!({"cleared": n})))
 }
 
+fn pf_game_path(name: &str) -> Result<std::path::PathBuf, String> {
+    let clean: String = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
+        .collect();
+    if clean.trim().is_empty() {
+        return Err("give the save a name".into());
+    }
+    Ok(std::path::PathBuf::from("saves/preflop").join(format!("{}.gtop", clean.trim())))
+}
+
+#[derive(Deserialize)]
+struct PfGameName {
+    name: String,
+}
+
+async fn pf_save_game(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfGameName>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let (solver, _, status) = pf_session(&state)?;
+    if status.lock().unwrap().state == "running" {
+        return Err(bad_request("stop the solve first, then save"));
+    }
+    let path = pf_game_path(&req.name).map_err(bad_request)?;
+    std::fs::create_dir_all("saves/preflop").map_err(|e| bad_request(e.to_string()))?;
+    let iteration = tokio::task::spawn_blocking(move || {
+        let s = solver.lock().unwrap();
+        s.save_game(path.to_str().unwrap())?;
+        Ok::<u32, String>(s.iteration)
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    Ok(Json(serde_json::json!({ "ok": true, "iteration": iteration })))
+}
+
+async fn pf_load_game(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<PfGameName>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    // stop a running preflop solve before replacing the session
+    if let Some(s) = state.preflop.lock().unwrap().as_ref() {
+        s.stop.store(true, Ordering::Relaxed);
+    }
+    let path = pf_game_path(&req.name).map_err(bad_request)?;
+    let loaded = tokio::task::spawn_blocking(move || {
+        solver::preflop::PreflopSolver::load_game(path.to_str().unwrap(), preflop_equity())
+    })
+    .await
+    .map_err(|e| bad_request(e.to_string()))?
+    .map_err(bad_request)?;
+    let seats: Vec<serde_json::Value> = (0..loaded.cfg.positions.len())
+        .map(|i| {
+            serde_json::json!({
+                "frozen": loaded.seat_frozen[i],
+                "profile": loaded.seat_profiles[i],
+            })
+        })
+        .collect();
+    let out = serde_json::json!({
+        "config": loaded.cfg,
+        "nodes": loaded.nodes.len(),
+        "action_nodes": loaded.nodes.iter().filter(|n| n.kind == 0).count(),
+        "arena_mb": loaded.arena_mb(),
+        "iteration": loaded.iteration,
+        "seats": seats,
+    });
+    let status = PreflopStatus {
+        state: "stopped".into(),
+        iteration: loaded.iteration,
+        ..Default::default()
+    };
+    *state.preflop.lock().unwrap() = Some(PreflopSession {
+        solver: Arc::new(Mutex::new(loaded)),
+        stop: Arc::new(AtomicBool::new(false)),
+        status: Arc::new(Mutex::new(status)),
+    });
+    Ok(Json(out))
+}
+
+async fn pf_list_games() -> Json<serde_json::Value> {
+    let mut entries: Vec<(String, std::time::SystemTime)> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir("saves/preflop") {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("gtop") {
+                if let Some(stem) = p.file_stem().and_then(|x| x.to_str()) {
+                    let t = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+                    entries.push((stem.to_string(), t));
+                }
+            }
+        }
+    }
+    entries.sort_by(|a, b| b.1.cmp(&a.1)); // newest first
+    Json(serde_json::json!(entries.into_iter().map(|(n, _)| n).collect::<Vec<_>>()))
+}
+
 async fn pf_archetypes() -> Json<serde_json::Value> {
     let list: Vec<serde_json::Value> = solver::preflop::archetypes()
         .into_iter()
@@ -1553,6 +1651,9 @@ async fn main() {
         .route("/api/preflop/table", post(pf_table))
         .route("/api/preflop/generate", post(pf_generate))
         .route("/api/preflop/archetypes", get(pf_archetypes))
+        .route("/api/preflop/save", post(pf_save_game))
+        .route("/api/preflop/load", post(pf_load_game))
+        .route("/api/preflop/saves", get(pf_list_games))
         .route("/api/preflop/hero", post(pf_hero))
         .route("/api/preflop/profiles", get(pf_profiles_list))
         .route("/api/preflop/profiles/save", post(pf_profile_save))

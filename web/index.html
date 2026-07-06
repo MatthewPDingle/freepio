@@ -268,6 +268,11 @@
         <button id="pfl-export" class="btn primary" disabled
           data-tip="Carry this heads-up flop spot into the postflop solver's SETUP.">
           SEND TO POSTFLOP SETUP</button>
+        <div class="pfl-step" style="margin-top:14px" data-tip="A saved game stores the whole session: config, every seat's model, point locks, and the full solver state — loading resumes exactly where you left off, RE-SOLVE continues converging.">SAVED GAMES</div>
+        <div class="btn-row">
+          <select id="pfl-savedsel" style="flex:1"><option value="">load a saved game…</option></select>
+          <button id="pfl-savegame" class="btn ghost" data-tip="Save the current game to disk (saves/preflop/). Big multiway games write a few hundred MB to a couple of GB.">SAVE</button>
+        </div>
       </section>
       <section class="panel pfl-main">
         <div id="pfl-ribbon"></div>

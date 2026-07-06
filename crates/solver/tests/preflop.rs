@@ -705,3 +705,42 @@ fn unreached_bucket_falls_back_to_card_appeal() {
     assert!(ncont(qq) > 0.99, "QQ continues vs a raise, got {}", ncont(qq));
     assert!(ncont(six_two_s) < 0.05, "62s must not be in a nit's defend, got {}", ncont(six_two_s));
 }
+
+/// Saved games restore the WHOLE session bit-for-bit: config, solver state,
+/// seat models, and the solve can continue from where it stopped.
+#[test]
+fn game_save_load_roundtrip() {
+    let eq = table();
+    let mut s = PreflopSolver::new(hu_limp_config(), eq.clone()).unwrap();
+    for _ in 0..120 {
+        s.iterate();
+    }
+    let whale_stats = solver::preflop::archetypes()
+        .into_iter()
+        .find(|(n, _)| n.starts_with("Whale"))
+        .unwrap()
+        .1;
+    let (prof, _) = s.generate_profile(1, &whale_stats, "whale").unwrap();
+    s.set_table(vec![false, false], vec![None, Some(prof)]).unwrap();
+    for _ in 0..30 {
+        s.iterate();
+    }
+    let path = std::env::temp_dir().join("gtopen_pf_roundtrip.gtop");
+    let path = path.to_str().unwrap().to_string();
+    s.save_game(&path).unwrap();
+    let l = PreflopSolver::load_game(&path, eq).unwrap();
+    std::fs::remove_file(&path).ok();
+    assert_eq!(l.iteration, s.iteration);
+    assert!(l.seat_profiles[1].is_some(), "seat model must ride along");
+    let a = s.average_strategy(0);
+    let b = l.average_strategy(0);
+    for (x, y) in a.iter().zip(b.iter()) {
+        assert!((x - y).abs() < 1e-7, "root strategy must survive the roundtrip");
+    }
+    // resuming the solve from the loaded state works and stays sane
+    let mut l = l;
+    for _ in 0..20 {
+        l.iterate();
+    }
+    assert!(l.br_gaps().iter().all(|g| g.is_finite()));
+}

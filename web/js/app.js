@@ -599,6 +599,7 @@ initPreflopLab({
     fillSeg: $('pfl-fillseg'), estimate: $('pfl-estimate'),
     modelBox: $('pfl-model'), editor: $('pfl-editor'),
     hero: $('pfl-hero'), applyBtn: $('pfl-apply'),
+    savedSel: $('pfl-savedsel'), saveGame: $('pfl-savegame'),
   },
   toast,
   gotoSetup: () => showTab('setup'),
