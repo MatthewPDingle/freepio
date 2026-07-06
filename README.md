@@ -201,7 +201,10 @@ response + EV gain vs the current strategy), `POST /api/lock {path, mode}`,
 Preflop lab: `POST /api/preflop/spot {config}`, `POST /api/preflop/solve`,
 `POST /api/preflop/stop`, `GET /api/preflop/status`,
 `POST /api/preflop/node {path}` (path = action indices),
-`POST /api/preflop/export {path}` (heads-up flop node → postflop spot inputs).
+`POST /api/preflop/export {path}` (heads-up flop node → postflop spot inputs),
+`POST /api/preflop/save|load {name}` + `GET /api/preflop/saves` (whole-session
+snapshots: config, seat models, point locks, full solver state — loading
+resumes mid-convergence).
 
 Path steps: `{"type":"action","index":0}` / `{"type":"card","card":"Ah"}`.
 Browse deep links: `/#line=a1,a1,cQh` opens BROWSE at that node (`a<i>` =
@@ -220,6 +223,10 @@ disk-cached, `PREFLOP_EQ_SAMPLES` env to tune); multiway equity uses the
 product approximation (exact heads-up). Convergence is reported as per-player
 best-response gaps in bb — for 3+ players CFR gives *an* equilibrium of the
 model, not a unique GTO answer.
+
+Games save to disk as whole sessions (SAVED GAMES in the lab panel):
+config, every seat's model, point locks and the full solver state come back
+exactly as left, and RE-SOLVE continues converging from the saved iteration.
 
 Validated: CFR reproduces an independent fictitious-play Nash oracle on
 heads-up jam/fold, and hits the published 10bb push/fold ranges (SB jams
