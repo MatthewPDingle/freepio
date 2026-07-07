@@ -255,7 +255,7 @@
         <div id="pfl-model"></div>
         <div id="pfl-editor" class="hidden"></div>
         <div class="pfl-row" style="margin-top:6px">
-          <label class="chk" style="flex:1" data-tip="Freeze every seat except the hero, then SOLVE: against fixed opponents CFR converges to the hero's maximum exploitation of this table. Needs solved strategies to freeze — solve the table first (fully-modeled seats are exempt: their play is forced by the profile). The per-seat 'bleeds' readouts show what each opponent loses.">HERO
+          <label class="chk" style="flex:1" data-tip="Set this LAST — the rhythm is three solves: (1) baseline, (2) model seats + SOLVE so the table adapts, (3) pick HERO + SOLVE for the max exploit. Hero freezes everyone else: modeled seats play their profiles, unmodeled seats pin to their step-2 strategies (which is why the table must be solved first — shortcut: if every other seat is modeled, set hero right away). Your seat's learning resets on hero-set so the exploit chart converges clean.">HERO
             <select id="pfl-hero" style="flex:1;margin-left:6px"><option value="">off</option></select>
           </label>
           <button id="pfl-apply" class="btn" data-tip="Send the seat models to the solver. A CHANGED table resets the learning state so the next solve converges fresh against it (SOLVE does this apply automatically when you forget); re-applying an unchanged model costs nothing.">APPLY MODEL</button>
