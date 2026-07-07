@@ -226,6 +226,12 @@ def stage_run(flops_file, iters, target):
     cli = os.path.join(ROOT, "target/release/solve-cli")
     env = dict(os.environ)
     env["LD_LIBRARY_PATH"] = "/usr/local/cuda/lib64:" + env.get("LD_LIBRARY_PATH", "")
+    # wide-range spots (limped pots, NL10 defends) cost ~10x per flop; 40
+    # flops x ~265 classes still out-samples 100 x ~42 on tight spots
+    flops40 = os.path.join(ROOT, "m5_spots/flops40.txt")
+    if not os.path.exists(flops40):
+        with open(flops40, "w") as f:
+            subprocess.check_call([cli, "flops", "40"], stdout=f)
     total_t0 = time.time()
     for i, s in enumerate(spots):
         name = s[:-5]
@@ -236,10 +242,14 @@ def stage_run(flops_file, iters, target):
             continue
         if os.path.exists(obs):
             os.remove(obs)  # partial from a crash: redo cleanly
-        print(f"[{i+1}/{len(spots)}] {name}", flush=True)
+        wide = ("limp" in name) or ("nl10" in name)
+        f_file = flops40 if wide else flops_file
+        f_target = max(target, 0.45) if wide else target
+        tag = " (wide: 40 flops, 0.45%)" if wide else ""
+        print(f"[{i+1}/{len(spots)}] {name}{tag}", flush=True)
         rc = subprocess.call(
-            [cli, "realization", os.path.join(OUT, "spots", s), flops_file,
-             str(iters), str(target), obs],
+            [cli, "realization", os.path.join(OUT, "spots", s), f_file,
+             str(iters), str(f_target), obs],
             cwd=ROOT, env=env)
         if rc != 0:
             print(f"    FAILED rc={rc}", flush=True)
@@ -288,7 +298,7 @@ def main():
         open(flops, "w").write("\n".join(subset) + "\n")
         args.flops = flops
 
-    proc = ensure_server()
+    proc = ensure_server() if args.stage in ("spots", "all") else None
     try:
         if args.stage in ("spots", "all"):
             stage_spots(games, args.lab_iters, 100, args.lab_target, mini=args.mini)
