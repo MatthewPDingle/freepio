@@ -37,15 +37,22 @@ empirically grounded. Design agreed 2026-07-04.
 
 **Plan.**
 
-*Phase A — observation extraction (laptop-friendly, ~1 session).*
-Extend batch mode (or add `solve-cli realization <spot.json> <boards>`)
-to emit, per board × player × 169-class, one JSON line:
-`{board, player, pos_frac, spr, n_players: 2, class, reach, eq, ev, r_obs}`.
-Aggregate combos→class with reach weighting (see `cellAgg` in
-`web/js/browse.js` for the convention). Skip classes with reach < ~1% of the
-class max (noise). Output: `realization_obs.jsonl`. SPR = eff_stack/pot at
-the flop root. Include the tree-size config in a header line — R is
-conditional on the bet-size menu used; calibrate with the menus you study.
+*Phase A — observation extraction: DONE 2026-07-07.*
+`solve-cli realization <spot.json> <boards> [iters] [target] [out.jsonl]`
+solves each board and appends JSONL: a header (full config — R is
+conditional on the bet-size menu), one meta line per board (iterations,
+exploit%, so the fit can filter on solve quality), then per-class rows
+`{board, player, pos_frac, spr, n_players, class, label, reach, eq, ev,
+r_obs}` (reach-weighted combo→class aggregation; classes under 1% of the
+busiest class or under 2% equity dropped). `solve-cli flops <n|all>` emits
+the 1755 canonical flop classes (weights sum 22,100 — verified) or a
+deterministic weighted subset. Engine fn: `Solver::realization_observations`
+(query.rs). Tests: enumeration count + symmetric-range invariant (identical
+ranges ⇒ IP over-realizes; asymmetric ranges legitimately flip this — the
+range-advantage side over-realizes, that's data not error). Pilot (laptop
+CPU, small SRP spot): AA/set r_obs ≈ 2.3-2.5, dominated KQo 0.24 on A-high,
+IP mean 1.09 vs OOP 0.69 — the spread M5 fits. Spot templates + workflow in
+`m5_spots/README.md`.
 
 *Phase B — data generation (desktop 3090, 1–2 overnights, no engineering).*
 ~20 exported spot configs (BTNvBB SRP, BBvUTG limped, 3-bet pots, lab-line

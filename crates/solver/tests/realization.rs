@@ -23,16 +23,22 @@ fn sizing(bet: &str, raise: &str) -> StreetSizing {
 
 #[test]
 fn realization_observations_are_sane() {
-    let s = |_p: usize| [sizing("50", "100"), sizing("50", ""), sizing("50", "")];
+    // IDENTICAL ranges both sides: any realization asymmetry is then purely
+    // positional, so "IP over-realizes" must hold. (With asymmetric ranges
+    // the range-advantage side can over-realize instead — that's a feature
+    // of the data, not a test invariant.)
+    let range = "22+,A2s+,K9s+,QTs+,JTs,T9s,98s,87s,76s,ATo+,KJo+,QJo";
+    let s = |_p: usize| [sizing("50", "100"), sizing("66", ""), sizing("66", "")];
     let spot = Spot::new(SpotConfig {
-        board: "Qs7h2d".to_string(),
-        range_oop: "AA,KK,QQ,99,77,55,AQs,KQs,QJs,T9s,87s,AQo,KQo,A5s".to_string(),
-        range_ip: "AA,KK,QQ,JJ,TT,88,66,AKs,AQs,KQs,JTs,98s,76s,AKo,AJo".to_string(),
+        board: "Ks7h2d".to_string(),
+        range_oop: range.to_string(),
+        range_ip: range.to_string(),
         tree: TreeConfig {
             starting_pot: 10.0,
             effective_stack: 40.0,
             oop: s(0),
             ip: s(1),
+            max_raises: 2,
             ..Default::default()
         },
     })
@@ -50,7 +56,7 @@ fn realization_observations_are_sane() {
         assert!(o.r_obs.is_finite() && o.r_obs > -0.05 && o.r_obs < 3.5,
             "wild r_obs {} for {} (player {})", o.r_obs, o.label, o.player);
         assert!((o.spr - 4.0).abs() < 1e-9);
-        assert_eq!(o.board, "Qs7h2d");
+        assert_eq!(o.board, "Ks7h2d");
     }
     // position premium: IP's reach-weighted mean realization beats OOP's
     let mean = |p: u8| {
