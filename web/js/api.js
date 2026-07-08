@@ -42,6 +42,12 @@ export const api = {
   profileLocks: (player, stats, aggressor) =>
     req('POST', '/api/profile_locks', { player, stats, aggressor }),
   profileLocksClear: () => req('DELETE', '/api/profile_locks'),
+  reportsRun: body => req('POST', '/api/reports/run', body),
+  reportsStatus: () => req('GET', '/api/reports/status'),
+  reportsStop: () => req('POST', '/api/reports/stop'),
+  reportsList: () => req('GET', '/api/reports'),
+  reportsGet: name => req('POST', '/api/reports/get', { name }),
+  reportsDelete: name => req('POST', '/api/reports/delete', { name }),
   unlock: path => req('POST', '/api/unlock', { path }),
   locks: () => req('GET', '/api/locks'),
   runouts: path => req('POST', '/api/runouts', { path }),

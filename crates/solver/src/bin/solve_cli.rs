@@ -228,14 +228,8 @@ fn run_flops(rest: &[String]) {
         }
         Some(n) => {
             let n: usize = n.parse().expect("flops: n must be a number or 'all'");
-            let total: f64 = all.iter().map(|x| x.1 as f64).sum();
-            let (mut cum, mut ti) = (0f64, 0usize);
-            for (b, w) in &all {
-                cum += *w as f64;
-                while ti < n && ((ti as f64 + 0.5) / n as f64) * total <= cum {
-                    println!("{b}");
-                    ti += 1;
-                }
+            for (b, _) in solver::cards::canonical_flops_subset(n) {
+                println!("{b}");
             }
         }
     }

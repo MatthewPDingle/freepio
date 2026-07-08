@@ -18,6 +18,7 @@
       <button class="tab" data-tab="setup">01 · SETUP</button>
       <button class="tab" data-tab="solve">02 · SOLVE</button>
       <button class="tab" data-tab="browse">03 · BROWSE</button>
+      <button class="tab" data-tab="reports">04 · REPORTS</button>
     </nav>
     <div id="hdr-right">
       <div id="solve-controls" class="hidden">
@@ -195,6 +196,37 @@
   </main>
 </div>
 <div id="toast"></div>
+  <!-- ============================= REPORTS ============================== -->
+  <main id="view-reports" class="view">
+    <div class="reports-layout">
+      <section class="panel">
+        <h2>New report <span class="info-dot" data-tip="Solves the CURRENT SETUP spot (ranges, sizes, pot, rake) across a canonical flop subset and aggregates strategy, EV, EQ and EQR per flop. Runs in the background on this machine — a 47-flop report on a typical spot takes minutes on a GPU, longer on CPU.">?</span></h2>
+        <label class="pfl-row" style="font-size:11px">Name <input type="text" id="rep-name" placeholder="BTN vs BB SRP…" style="flex:1"></label>
+        <label class="pfl-row" style="font-size:11px" data-tip="More flops = smoother texture aggregates, linearly more solve time. 47 for a quick look, 95 standard, 184 fine-grained, 1755 = every strategically distinct flop (long).">Flops <select id="rep-flops" style="flex:1">
+          <option>47</option><option selected>95</option><option>184</option><option value="1755">1755 (all)</option>
+        </select></label>
+        <label class="chk" style="font-size:11px" id="rep-villain-row" data-tip="Lock the villain to his postflop profile on every flop before measuring (extra solve per flop). Requires a lab export with a modeled seat."><input type="checkbox" id="rep-vsvillain"> vs modeled villain</label>
+        <div class="btn-row">
+          <button id="rep-run" class="btn primary" data-tip="Start the report on the spot currently configured in SETUP.">RUN REPORT</button>
+          <button id="rep-stop" class="btn danger hidden">STOP</button>
+        </div>
+        <div id="rep-progress" class="mono dim" style="font-size:11px;margin-top:6px"></div>
+        <h2 style="margin-top:14px">Library</h2>
+        <div id="rep-library"></div>
+      </section>
+      <section class="panel hidden" id="rep-viewer">
+        <div class="pfl-nodehead"><span id="rep-title" style="font-size:13px;font-weight:600"></span></div>
+        <div id="rep-subtitle" class="mono dim" style="font-size:10px;margin-bottom:6px"></div>
+        <div id="rep-controls" class="ro-controls"></div>
+        <canvas id="rep-canvas" style="width:100%;height:190px" data-tip=""></canvas>
+        <div id="rep-detail" class="hidden" style="margin:6px 0"></div>
+        <div id="rep-aggregate" class="combo-row ro-agg"></div>
+        <div id="rep-table" style="max-height:340px;overflow-y:auto"></div>
+        <div id="rep-legend" class="legend"></div>
+      </section>
+    </div>
+  </main>
+
   <!-- =========================== PREFLOP LAB ============================ -->
   <main id="view-preflop" class="view active">
     <div class="pfl-layout">

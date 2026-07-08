@@ -160,6 +160,26 @@ mod tests {
 /// representative = the lexicographically smallest suit-permutation of the
 /// descending-sorted three cards; weight = raw flops in the class. Returned
 /// high-to-low in canonical card order, deterministic.
+/// Deterministic weighted systematic subset of the canonical flops: n
+/// boards spread across the weight distribution (texture-proportional).
+pub fn canonical_flops_subset(n: usize) -> Vec<(String, u32)> {
+    let all = canonical_flops();
+    if n == 0 || n >= all.len() {
+        return all;
+    }
+    let total: f64 = all.iter().map(|x| x.1 as f64).sum();
+    let mut out = Vec::with_capacity(n);
+    let (mut cum, mut ti) = (0f64, 0usize);
+    for (b, w) in &all {
+        cum += *w as f64;
+        while ti < n && ((ti as f64 + 0.5) / n as f64) * total <= cum {
+            out.push((b.clone(), *w));
+            ti += 1;
+        }
+    }
+    out
+}
+
 pub fn canonical_flops() -> Vec<(String, u32)> {
     let mut perms: Vec<[u8; 4]> = Vec::with_capacity(24);
     for a in 0..4u8 {

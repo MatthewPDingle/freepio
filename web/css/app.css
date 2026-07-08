@@ -555,6 +555,20 @@ textarea {
   font-family: var(--font-data); font-size: 12px; color: var(--ink-dim);
 }
 
+/* flop reports */
+.reports-layout { display: grid; grid-template-columns: 300px 1fr; gap: 10px; }
+.report-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 4px;
+  padding: 6px 9px; margin-bottom: 5px; color: var(--ink);
+  font-family: var(--font-body); font-size: 12px;
+}
+.report-item:hover { border-color: var(--accent); }
+.report-item span { display: block; font-size: 10px; margin-top: 1px; }
+#rep-canvas { background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; }
+#rep-table .combo-row.sel { outline: 1px solid var(--accent); }
+@media (max-width: 1100px) { .reports-layout { grid-template-columns: 1fr; } }
+
 /* runouts report controls + aggregate row */
 .ro-controls { display: flex; gap: 8px; margin: 6px 0 4px; flex-wrap: wrap; }
 .ro-controls .seg button { padding: 3px 8px; font-size: 10px; letter-spacing: .06em; }

@@ -6,6 +6,7 @@ import { Browser, cardChip } from './browse.js';
 import { RANKS, SUITS, SUIT_GLYPH, cardToString } from './cards.js';
 import { initTooltips } from './tooltip.js';
 import { initPreflopLab } from './preflop_lab.js';
+import { initReports } from './reports.js';
 
 const $ = id => document.getElementById(id);
 initTooltips();
@@ -253,6 +254,26 @@ function computeText(st) {
   if (st.gpu_note) return `△ ${st.gpu_note}`;
   if (st.state === 'running') return st.tree.gpu_available ? 'starting GPU…' : 'computing on CPU';
   return ''; // built/loaded, not solved yet — #mem-info shows whether it fits GPU
+}
+
+/** The SETUP page's current spot as a SpotRequest (shared by BUILD and
+ *  flop reports). Returns null when the config is incomplete. */
+function currentSpotRequest() {
+  if (state.board.length < 3) return null;
+  return {
+    board: state.board.join(''),
+    range_oop: editor.textFor(0),
+    range_ip: editor.textFor(1),
+    starting_pot: +$('cfg-pot').value,
+    effective_stack: +$('cfg-stack').value,
+    rake_pct: +$('cfg-rake').value,
+    rake_cap: +$('cfg-rakecap').value,
+    allin_threshold: +$('cfg-allinthr').value,
+    add_allin: $('cfg-addallin').checked,
+    max_raises: 10,
+    oop: collectSizes('oop'),
+    ip: collectSizes('ip'),
+  };
 }
 
 $('btn-build').addEventListener('click', async () => {
@@ -612,6 +633,73 @@ initPreflopLab({
     await applyExportedSpot(ex);
   },
 });
+
+// ---------------------------------------------------------------------------
+// Flop reports
+// ---------------------------------------------------------------------------
+
+/** Apply a report's spot + a chosen board into SETUP, then build and solve. */
+async function openReportSpot(spot, board) {
+  $('cfg-pot').value = spot.starting_pot;
+  $('cfg-stack').value = spot.effective_stack;
+  $('cfg-rake').value = spot.rake_pct;
+  $('cfg-rakecap').value = spot.rake_cap;
+  $('cfg-allinthr').value = spot.allin_threshold;
+  $('cfg-addallin').checked = spot.add_allin;
+  state.board = board.match(/.{2}/g) || [];
+  renderBoardInput(); renderDeckPicker();
+  for (const who of ['oop', 'ip']) {
+    (spot[who] || []).forEach((sz, st) => {
+      for (const kind of ['bet', 'raise', 'donk']) {
+        const input = document.querySelector(
+          `#sizes-body input[data-who="${who}"][data-kind="${kind}"][data-street="${st}"]`);
+        if (input && sz[kind] != null) input.value = sz[kind];
+      }
+    });
+  }
+  editor.setPlayer(1);
+  await editor.setWeightsFromText(spot.range_ip);
+  editor.setPlayer(0);
+  await editor.setWeightsFromText(spot.range_oop);
+  showTab('setup');
+  toast(`report spot loaded on ${board} — building…`);
+  $('btn-build').click();
+  // solve once the build lands, then it's browsable
+  const t0 = Date.now();
+  const wait = setInterval(() => {
+    if (state.built) {
+      clearInterval(wait);
+      $('btn-solve').click();
+      showTab('browse');
+    } else if (Date.now() - t0 > 120000) {
+      clearInterval(wait);
+    }
+  }, 500);
+}
+
+const reports = initReports({
+  els: {
+    name: $('rep-name'), flops: $('rep-flops'), vsVillain: $('rep-vsvillain'),
+    run: $('rep-run'), stop: $('rep-stop'), progress: $('rep-progress'),
+    library: $('rep-library'), viewer: $('rep-viewer'), title: $('rep-title'),
+    subtitle: $('rep-subtitle'), controls: $('rep-controls'),
+    canvas: $('rep-canvas'), detail: $('rep-detail'),
+    aggregate: $('rep-aggregate'), table: $('rep-table'), legend: $('rep-legend'),
+  },
+  toast,
+  currentSpot: currentSpotRequest,
+  villains: () => {
+    const pf = browser.preflop;
+    if (!pf || !pf.villains) return null;
+    for (const [side, p] of [['oop', 0], ['ip', 1]]) {
+      const v = pf.villains[side];
+      if (v) return { player: p, name: v.name, stats: v.stats, aggressor: pf.aggressor };
+    }
+    return null;
+  },
+  openInBrowse: openReportSpot,
+});
+void reports;
 
 // restore last config if present
 try {
