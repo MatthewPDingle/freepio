@@ -94,6 +94,12 @@ Optional environment:
    EXPLOIT, and read off the max-exploit strategy plus each hand's EV gain
    over the equilibrium line — no re-solve needed. Verified by test: vs a
    locked always-caller the best response bets the nuts and never bluffs.
+6. **REPORTS** — batch-solve the same spot across a weighted canonical flop
+   subset (47/95/184 or all 1755) in the background, then explore a strip
+   chart + sortable table of EV/EQ/EQR and action frequencies per flop,
+   filter by texture, and click any flop to re-solve it into BROWSE.
+   Reports can run against a profile-locked villain (with the hero
+   re-adapting) — "where does the whale bleed by texture" as one report.
 
 ## Engine
 
