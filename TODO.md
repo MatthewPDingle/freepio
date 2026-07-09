@@ -274,22 +274,23 @@ terminal evaluator ("learned" realization mode). Strictly supervised — no
 self-play loop needed for study purposes. 3090 is ample. Depends on M5's
 data pipeline; supersedes calibrated-R when validated.
 
-## 7. Flop reports (SHELVED until the desktop — needs batch compute)
+## 7. Flop reports — DONE 2026-07-09 (phases 1-3 shipped)
 
-Phase 1 (turn/river reports inside a solved tree) shipped 2026-07-05: the
-RUNOUTS REPORT gained EV and EQR metrics, texture filters
-(flush/pairing/straighty/overcard/brick) and an equal-weight aggregate
-row. Remaining phases are batch-compute features:
-- Phase 2: in-server batch runner solving the SAME spot across a weighted
-  canonical flop set (default ~95-184 flops; all 1755 as an overnight
-  option), progress via status polling, report JSON in saves/reports/,
-  chart + sortable table + texture filters, click-a-flop -> re-solve into
-  Browse (don't store 100+ full saves). Works against profile-locked
-  villains for free -> "where does the whale bleed by texture", which no
-  commercial tool offers.
-- Phase 3: exploit-metric columns, report library/compare, and feed M5
-  Phase A/B from the same runs (the per-flop extraction IS r_obs:
-  EQR = EV / (pot x EQ) per class — one pipeline, two consumers).
+Phase 1 (turn/river RUNOUTS REPORT: EV/EQR metrics, texture filters,
+aggregate row) shipped 2026-07-05. Phases 2-3 shipped 2026-07-08
+(a8807fd): background batch runner (`/api/reports/*`, partial saves
+every 8 flops, GPU path for fresh solves), REPORTS tab (strip chart +
+hitmap hover, OOP-root/IP-vs-check toggle, texture filters,
+iso-weighted aggregate, sortable table, OPEN IN BROWSE re-solve), and
+vs-villain reports via per-flop `lock_profile` + hero re-adapt — the
+"where does the whale bleed by texture" report no commercial tool has.
+Starter library generated on cloud A40s 2026-07-09 (saves/reports/,
+gitignored): "2-5 150bb BB defends vs UTG 3x" (95 flops), "NL10 BB
+defends vs CO 2.5x" (95), "NL10 BB is a WHALE vs CO 2.5x" (47 flops —
+the locked-villain hero re-adapt is CPU-bound; regenerate at 95 on the
+desktop or a high-vCPU pod when wanted). M5's realization extraction
+shares this pipeline as designed. Ops gotchas live in item 8 ("Report
+solver: log GPU fallback") and the memory file (SOLVER_THREADS).
 
 ## 8. Smaller items
 
