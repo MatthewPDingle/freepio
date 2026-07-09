@@ -209,8 +209,8 @@ impl RealizationFit {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
         let v: serde_json::Value =
             serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
-        if v.get("version").and_then(|x| x.as_i64()) != Some(4) {
-            return Err(format!("{path}: expected fit table version 4"));
+        if v.get("version").and_then(|x| x.as_i64()) != Some(5) {
+            return Err(format!("{path}: expected fit table version 5"));
         }
         let ctx = v.get("ctx").ok_or("missing ctx")?;
         let g = |name: &str| -> Result<f32, String> {
