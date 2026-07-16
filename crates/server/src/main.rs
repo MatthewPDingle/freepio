@@ -48,9 +48,11 @@ struct PreflopSession {
     solver: Arc<Mutex<solver::preflop::PreflopSolver>>,
     stop: Arc<AtomicBool>,
     status: Arc<Mutex<PreflopStatus>>,
-    /// Solve worker thread, if one was ever started. Joined before the
-    /// session is replaced (pf_build/pf_load_game) so no zombie solve keeps
-    /// burning the rayon pool or holding VRAM into the next session.
+    /// Solve worker thread, if one was ever started. Always joined before the
+    /// session is replaced — pf_stop_and_join up front, and pf_install_session
+    /// at swap time for a worker that raced in while the build/load ran with
+    /// the mutex free — so no zombie solve keeps burning the rayon pool or
+    /// holding VRAM into the next session.
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -809,6 +811,47 @@ async fn pf_stop_and_join(state: &Arc<AppState>) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Install a freshly built/loaded preflop session, reaping any worker that
+/// raced in against the OLD session first. `pf_stop_and_join` runs before the
+/// long build/load, but the preflop mutex is free WHILE it runs, so a
+/// concurrent pf_solve can pass its 409 check (the old worker was just
+/// joined, status is no longer "running") and legitimately spawn a worker
+/// against the session about to be replaced. pf_solve holds the mutex for its
+/// whole body, so its spawn+store is atomic with respect to the lock scopes
+/// here: each round either finds that worker's handle in the session (signal
+/// its stop flag — the session's own, so the signal reaches it — take it, and
+/// join OUTSIDE the lock), or finds no worker and swaps the session in the
+/// SAME scope. Old workers are therefore always joined exactly once, none can
+/// outlive its session, and a worker can only ever be spawned against the
+/// session currently in AppState.
+async fn pf_install_session(
+    state: &Arc<AppState>,
+    session: PreflopSession,
+) -> Result<(), ApiError> {
+    let mut session = Some(session);
+    loop {
+        let old_worker = {
+            let mut guard = state.preflop.lock().unwrap();
+            let worker = guard.as_mut().and_then(|s| {
+                s.stop.store(true, Ordering::Relaxed);
+                s.worker.take()
+            });
+            match worker {
+                Some(h) => h,
+                None => {
+                    *guard = session.take();
+                    return Ok(());
+                }
+            }
+        };
+        tokio::task::spawn_blocking(move || {
+            let _ = old_worker.join();
+        })
+        .await
+        .map_err(|e| bad_request(e.to_string()))?;
+    }
+}
+
 async fn pf_build(
     State(state): State<Arc<AppState>>,
     Json(cfg): Json<solver::preflop::PreflopConfig>,
@@ -829,12 +872,16 @@ async fn pf_build(
     status.state = "idle".into();
     status.hero = built.hero;
     status.frozen = built.seat_frozen.clone();
-    *state.preflop.lock().unwrap() = Some(PreflopSession {
-        solver: Arc::new(Mutex::new(built)),
-        stop: Arc::new(AtomicBool::new(false)),
-        status: Arc::new(Mutex::new(status)),
-        worker: None,
-    });
+    pf_install_session(
+        &state,
+        PreflopSession {
+            solver: Arc::new(Mutex::new(built)),
+            stop: Arc::new(AtomicBool::new(false)),
+            status: Arc::new(Mutex::new(status)),
+            worker: None,
+        },
+    )
+    .await?;
     Ok(Json(serde_json::json!({
         "nodes": nodes, "action_nodes": action_nodes, "arena_mb": arena_mb
     })))
@@ -1338,12 +1385,16 @@ async fn pf_load_game(
         frozen: loaded.seat_frozen.clone(),
         ..Default::default()
     };
-    *state.preflop.lock().unwrap() = Some(PreflopSession {
-        solver: Arc::new(Mutex::new(loaded)),
-        stop: Arc::new(AtomicBool::new(false)),
-        status: Arc::new(Mutex::new(status)),
-        worker: None,
-    });
+    pf_install_session(
+        &state,
+        PreflopSession {
+            solver: Arc::new(Mutex::new(loaded)),
+            stop: Arc::new(AtomicBool::new(false)),
+            status: Arc::new(Mutex::new(status)),
+            worker: None,
+        },
+    )
+    .await?;
     Ok(Json(out))
 }
 
@@ -1414,7 +1465,11 @@ fn report_path(name: &str) -> Result<std::path::PathBuf, String> {
     Ok(std::path::PathBuf::from("saves/reports").join(format!("{}.json", clean.trim())))
 }
 
-/// Reach-weighted per-player aggregates + action frequencies at a node.
+/// Per-player EV/EQ aggregates (weighted by reach x valid, the convention
+/// used everywhere else — per-hand EVs are normalized by the card-removal-
+/// adjusted opponent mass, so only the pair mass aggregates them back to a
+/// true range EV with EV_OOP + EV_IP = pot) + reach-weighted action
+/// frequencies at a node.
 fn report_node_stats(
     view: &solver::query::NodeView,
     pot: f64,
@@ -1424,9 +1479,10 @@ fn report_node_stats(
         let (mut wev, mut weq, mut wt) = (0f64, 0f64, 0f64);
         for h in &view.players[p].hands {
             if let (Some(eq), Some(ev)) = (h.eq, h.ev) {
-                wev += ev as f64 * h.reach as f64;
-                weq += eq as f64 * h.reach as f64;
-                wt += h.reach as f64;
+                let w = h.reach as f64 * h.valid as f64;
+                wev += ev as f64 * w;
+                weq += eq as f64 * w;
+                wt += w;
             }
         }
         let (ev, eq) = if wt > 1e-12 { (wev / wt, weq / wt) } else { (0.0, 0.0) };
@@ -1490,6 +1546,18 @@ async fn report_run(
         let mut rows: Vec<serde_json::Value> = Vec::new();
         let mut err = String::new();
         let mut stopped = false;
+        // The same node budget + arena gate the BUILD TREE path applies:
+        // reports.js sends the SETUP fields straight here without building,
+        // so an oversized sizing config must abort cheaply mid-build instead
+        // of OOMing the server once per flop. The config is identical for
+        // every flop (only the board changes), so a refused first flop fails
+        // the whole report fast through the existing error break, before any
+        // solving starts. The cap is snapshotted once so every flop is judged
+        // against the same budget; no old-arena credit — the report never
+        // drops the browse session, whose memory MemAvailable already
+        // excludes.
+        let storage = Storage::Compressed;
+        let cap_mb = mem_cap_mb();
         for (i, (board, weight)) in flops.iter().enumerate() {
             if app.report_stop.load(Ordering::Relaxed) {
                 stopped = true;
@@ -1510,14 +1578,25 @@ async fn report_run(
                     break;
                 }
             };
-            let spot = match Spot::new(cfg) {
+            // STRICT build (this is a new tree, not a saved one), under the
+            // node budget derived from the memory cap.
+            let node_cap = node_budget(cap_mb, &cfg, storage);
+            let spot = match Spot::new_with_limit(cfg, Some(node_cap)) {
                 Ok(s) => s,
                 Err(e) => {
-                    err = e;
+                    err = format!("{board}: {e}");
                     break;
                 }
             };
-            let mut solver = Solver::with_storage(Arc::new(spot), Storage::Compressed);
+            let arena_mb = spot.arena_bytes_for(storage) as f64 / 1e6;
+            if arena_mb > cap_mb {
+                err = format!(
+                    "{board}: tree too large ({arena_mb:.0} MB of solver data, \
+                     cap {cap_mb:.0} MB); reduce bet sizes or set SOLVER_MEM_MB to override"
+                );
+                break;
+            }
+            let mut solver = Solver::with_storage(Arc::new(spot), storage);
             let bt0 = std::time::Instant::now();
             let (iters, pct) =
                 report_solve(&mut solver, req.max_iterations, req.target, &app.report_stop);
@@ -2109,21 +2188,25 @@ async fn save_solve(
 const SAVE_MAGIC: &[u8] = b"GTOSOLVE2\n";
 
 /// The subset of the save header load_solve needs for pre-validation;
-/// unknown header fields (locks, labels, future additions) are ignored.
+/// unknown header fields (labels, future additions) are ignored.
 #[derive(Deserialize)]
 struct SaveHeaderPeek {
     config: SpotConfig,
     #[serde(default)]
     #[allow(dead_code)]
     iteration: u32,
+    #[serde(default)]
+    locks: Vec<(u32, Vec<f32>)>,
 }
 
 /// Validate a .gto save WITHOUT allocating solver arenas: file exists, magic
-/// matches, header JSON and config parse, the spot rebuilds (under the tree
-/// node budget), every arena section's recorded length matches the rebuilt
-/// tree, and the file actually contains all the bytes. Returns the rebuilt
-/// spot so the caller can size-check it against the memory cap. The real
-/// load re-reads the file afterwards.
+/// matches, header JSON and config parse, the spot rebuilds (LENIENT, under
+/// the tree node budget — vetting must match the real lenient load path so
+/// pre-fix saves with a raise-only token in a bet list still pass), the lock
+/// section is well-formed for that tree, every arena section's recorded
+/// length matches the rebuilt tree, and the file actually contains all the
+/// bytes. Returns the rebuilt spot so the caller can size-check it against
+/// the memory cap. The real load re-reads the file afterwards.
 fn peek_save(path: &str, cap_mb: f64, storage: Storage) -> Result<Spot, String> {
     use std::io::{Read, Seek, SeekFrom};
     let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
@@ -2147,7 +2230,13 @@ fn peek_save(path: &str, cap_mb: f64, storage: Storage) -> Result<Spot, String> 
     let header: SaveHeaderPeek =
         serde_json::from_slice(&header_line).map_err(|e| format!("bad header: {e}"))?;
     let node_cap = node_budget(cap_mb, &header.config, storage);
-    let spot = Spot::new_with_limit(header.config, Some(node_cap))?;
+    let spot = Spot::new_lenient_with_limit(header.config, Some(node_cap))?;
+    // Malformed lock entries would panic at the first query once installed:
+    // refuse them HERE, while the current session (and its unsaved solve)
+    // still exists — load_with_storage validates too, but by then the old
+    // session is already gone.
+    solver::save::validate_locks(&spot, &header.locks)
+        .map_err(|e| format!("bad lock section: {e}"))?;
     // Four arena sections (regrets x2, strategy x2), each length-prefixed:
     // verify the recorded lengths and the total file size, so a truncated or
     // config-mismatched save is refused BEFORE the current session is lost.
@@ -2199,9 +2288,20 @@ async fn load_solve(
         .map_err(|e| bad_request(e.to_string()))?
         .map_err(bad_request)?;
     let probe_arena_mb = probe.arena_bytes_for(storage) as f64 / 1e6;
-    if probe_arena_mb > cap_mb {
+    // Gate on the loader's true PEAK, not the steady-state arena size:
+    // load_with_storage allocates all four arenas up front, then decodes each
+    // section through a transient vec![0f32; data_size[p]] staging buffer
+    // while the arenas are fully resident, so the peak is arenas + the larger
+    // player's section as f32 (worst under Compressed, where one section's
+    // staging is roughly half the whole arena footprint). Gating the steady
+    // state alone admits saves that thrash into swap mid-load — after the old
+    // session is already gone.
+    let staging_mb = probe.tree.data_size[0].max(probe.tree.data_size[1]) as f64 * 4.0 / 1e6;
+    let peak_mb = probe_arena_mb + staging_mb;
+    if peak_mb > cap_mb {
         return Err(bad_request(format!(
-            "save too large to load ({probe_arena_mb:.0} MB of solver data, cap {cap_mb:.0} MB); \
+            "save too large to load ({probe_arena_mb:.0} MB of solver data \
+             + {staging_mb:.0} MB load staging = {peak_mb:.0} MB peak, cap {cap_mb:.0} MB); \
              set SOLVER_MEM_MB to override"
         )));
     }
