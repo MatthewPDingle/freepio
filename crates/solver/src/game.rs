@@ -6,7 +6,7 @@ use crate::evaluator::evaluate7;
 use crate::range::Range;
 use crate::scratch::Buf;
 use crate::store::Storage;
-use crate::tree::{Tree, TreeBuilder, TreeConfig, SENTINEL};
+use crate::tree::{Strictness, Tree, TreeBuilder, TreeConfig, SENTINEL};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -109,6 +109,34 @@ impl Spot {
     /// an oversized config errors out early instead of OOMing before the
     /// caller can size-check the finished spot.
     pub fn new_with_limit(config: SpotConfig, max_nodes: Option<usize>) -> Result<Spot, String> {
+        Spot::new_impl(config, max_nodes, Strictness::Strict)
+    }
+
+    /// [`Spot::new`] in [`Strictness::LenientLoad`] mode, for rebuilding a
+    /// spot from a SAVED config only (never for new builds): sizing quirks
+    /// the pre-validation tree builder silently dropped (a raise-only "2.5x"
+    /// in a bet/donk list) are dropped again instead of rejected, so the
+    /// rebuilt tree layout is byte-identical to the one the save's arenas
+    /// were written against and old .gto files keep loading.
+    pub fn new_lenient(config: SpotConfig) -> Result<Spot, String> {
+        Spot::new_impl(config, None, Strictness::LenientLoad)
+    }
+
+    /// [`Spot::new_lenient`] with a tree node budget (see
+    /// [`Spot::new_with_limit`]); for save-vetting paths that rebuild the
+    /// tree under a memory cap.
+    pub fn new_lenient_with_limit(
+        config: SpotConfig,
+        max_nodes: Option<usize>,
+    ) -> Result<Spot, String> {
+        Spot::new_impl(config, max_nodes, Strictness::LenientLoad)
+    }
+
+    fn new_impl(
+        config: SpotConfig,
+        max_nodes: Option<usize>,
+        strictness: Strictness,
+    ) -> Result<Spot, String> {
         // fraction-vs-percent confusion charges the full cap on every pot
         if config.tree.rake_pct >= 1.0 {
             return Err(format!(
@@ -196,11 +224,12 @@ impl Spot {
             hands[1].iter().map(|h| h.weight).collect::<Vec<f32>>(),
         ];
 
-        let tree = TreeBuilder::build_with_limit(
+        let tree = TreeBuilder::build_with_options(
             &config.tree,
             &board,
             [hands[0].len(), hands[1].len()],
             max_nodes,
+            strictness,
         )?;
         let river = build_river_table(&board, board_mask, &hands);
 

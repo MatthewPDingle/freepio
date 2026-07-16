@@ -31,8 +31,16 @@ export function initTooltips() {
 
   document.addEventListener('mouseover', e => enter(tipTarget(e.target)));
   document.addEventListener('mouseout', e => leave(tipTarget(e.target), e.relatedTarget));
-  // keyboard: focused elements (buttons, tabindexed surfaces) get the same tips
-  document.addEventListener('focusin', e => enter(tipTarget(e.target)));
+  // keyboard: focused elements (buttons, tabindexed surfaces) get the same
+  // tips — but only when the focus is keyboard-driven (:focus-visible
+  // semantics). Clicks also move focus (buttons, and the tabindexed
+  // containers via any non-focusable child), and without this gate the
+  // focusin that follows every mousedown would resurrect the very tip the
+  // mousedown just hid, parking it over whatever the user clicked.
+  let keyboardFocus = false;
+  document.addEventListener('keydown', () => { keyboardFocus = true; }, true);
+  document.addEventListener('pointerdown', () => { keyboardFocus = false; }, true);
+  document.addEventListener('focusin', e => { if (keyboardFocus) enter(tipTarget(e.target)); });
   document.addEventListener('focusout', e => leave(tipTarget(e.target), e.relatedTarget));
   document.addEventListener('mousedown', hide, true);
   window.addEventListener('scroll', hide, true);

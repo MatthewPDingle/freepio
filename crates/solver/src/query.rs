@@ -208,6 +208,10 @@ pub struct ExploitHandView {
     pub c2: u8,
     pub weight: f32,
     pub reach: f32,
+    /// Card-removal-adjusted opponent reach mass (the per-hand EV normalizer).
+    /// Aggregates of br_ev/cur_ev/gain/evs must weight by reach x valid, same
+    /// convention as `HandView::valid`.
+    pub valid: f32,
     /// EV of best-responding from here on (pot-share convention).
     pub br_ev: Option<f32>,
     /// EV of the current average strategy (same convention).
@@ -232,8 +236,10 @@ pub struct ExploitView {
     pub actions: Vec<ActionView>,
     pub locked: bool,
     pub hands: Vec<ExploitHandView>,
-    /// Reach-weighted average EV under best response / current strategy, and
-    /// the difference (chips) — the headline "how exploitable is this node".
+    /// Reach x valid weighted average EV under best response / current
+    /// strategy, and the difference (chips) — the headline "how exploitable
+    /// is this node". Same weighting as every other range-average EV, so the
+    /// levels line up with the strategy-mode EVs at the same node.
     pub avg_br_ev: Option<f32>,
     pub avg_cur_ev: Option<f32>,
     pub avg_gain: Option<f32>,
@@ -886,6 +892,7 @@ impl Solver {
                     c2: h.c2,
                     weight: h.weight,
                     reach: walk.reach[p][j],
+                    valid: valid[j] as f32,
                     br_ev,
                     cur_ev,
                     gain,
@@ -895,12 +902,14 @@ impl Solver {
             })
             .collect();
 
-        // reach-weighted averages for the banner
+        // Banner averages weight by reach x valid: per-hand EVs are
+        // normalized by valid, so only this weighting aggregates them back to
+        // a true range EV (the reach x valid convention used everywhere else).
         let mut wsum = 0f64;
         let (mut b, mut c) = (0f64, 0f64);
         for h in &hands {
             if let (Some(be), Some(ce)) = (h.br_ev, h.cur_ev) {
-                let w = h.reach as f64;
+                let w = h.reach as f64 * h.valid as f64;
                 if w > 0.0 {
                     wsum += w;
                     b += w * be as f64;

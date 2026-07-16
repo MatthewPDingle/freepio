@@ -324,9 +324,14 @@ async function buildTree() {
     return false;
   }
   $('btn-build').disabled = true;
+  const prevBuildInfo = $('build-info').textContent;
   $('build-info').textContent = 'building…';
-  // the server drops the old session as soon as the build starts, so from
-  // here until the build lands there is no tree to solve or browse
+  // the server validates the new spot BEFORE swapping sessions, so the old
+  // tree (and any solve on it) survives until the build actually lands. Reset
+  // the client's claims optimistically for the in-flight build, but keep the
+  // old values to restore if the build is refused.
+  const prevBuilt = state.built;
+  const prevSolved = state.solved;
   state.built = false;
   state.solved = false;
   try {
@@ -363,16 +368,19 @@ async function buildTree() {
     showTab('solve');
     return true;
   } catch (e) {
-    // the server drops the old session BEFORE a build can fail, so it no
-    // longer holds any tree: clear the client's tree/solve claims to match
-    // instead of advertising the previous build
-    $('build-info').textContent = '';
-    $('tree-summary').textContent = '';
-    $('mem-info').textContent = '';
-    $('compute-info').textContent = '';
-    state.treeStamp = null;
+    // validate-then-swap on the server: a refused build leaves the previous
+    // session — tree, and any completed solve — fully intact. Restore the
+    // client's claims to match (state.treeStamp and the tree/mem displays
+    // still describe that surviving session, so they stay). Restoring
+    // `solved` BEFORE pollStatus is what keeps the completion branch there
+    // from mistaking the surviving done session for a fresh solve and
+    // toasting 'solve done' over this error toast (plus a needless Browse
+    // refresh) — the toast must fire only when a run actually finishes.
+    state.built = prevBuilt;
+    state.solved = prevSolved;
+    $('build-info').textContent = prevBuildInfo;
     toast(`build failed: ${e.message}`, true);
-    pollStatus(); // resync pill + header solve bar with the server (now idle)
+    pollStatus(); // resync pill + header solve bar with the surviving session
     return false;
   } finally {
     $('btn-build').disabled = false;

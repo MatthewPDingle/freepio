@@ -27,6 +27,50 @@ struct Header {
     lock_labels: Vec<(u32, String)>,
 }
 
+/// Validate saved lock entries against the tree a [`Spot`] built.
+///
+/// Every consumer of `Solver::locks` assumes the exact shape — `sigma` copied
+/// with `copy_from_slice`, indexed unchecked as `l[a * nh + j]`, the node
+/// index used to address per-node offset tables — so a malformed entry that
+/// reaches a live solver panics at the first query or solve step, under the
+/// session mutex. Checks, per `(node_idx, sigma)` entry: the index is in
+/// range, the node is an action node, `sigma.len()` is exactly
+/// `num_children * num_hands(actor)`, and every value is finite and >= 0.
+///
+/// `load_with_storage` runs this before installing the locks, but callers
+/// that vet a save file BEFORE discarding existing state (the server's
+/// peek-then-swap load path) should also run it on the peeked header's lock
+/// entries with the rebuilt spot, since a load-time error still fires after
+/// the old session is gone.
+pub fn validate_locks(spot: &Spot, locks: &[(u32, Vec<f32>)]) -> Result<(), String> {
+    for (idx, sigma) in locks {
+        let node = spot.tree.nodes.get(*idx as usize).ok_or_else(|| {
+            format!(
+                "lock at node {idx}: index out of range (tree has {} nodes)",
+                spot.tree.nodes.len()
+            )
+        })?;
+        if node.kind != KIND_ACTION {
+            return Err(format!("lock at node {idx}: not an action node"));
+        }
+        let na = node.num_children as usize;
+        let nh = spot.hands[node.player as usize].len();
+        if sigma.len() != na * nh {
+            return Err(format!(
+                "lock at node {idx}: sigma has {} entries, expected {na} actions x {nh} hands = {}",
+                sigma.len(),
+                na * nh
+            ));
+        }
+        if let Some(v) = sigma.iter().find(|v| !v.is_finite() || **v < 0.0) {
+            return Err(format!(
+                "lock at node {idx}: invalid frequency {v} (must be finite and >= 0)"
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl Solver {
     /// Decode one whole arena (player `p`'s action-node blocks) to f32.
     pub(crate) fn arena_to_f32(&self, store: &Store, p: usize) -> Vec<f32> {
@@ -105,7 +149,13 @@ impl Solver {
         }
         let header: Header =
             serde_json::from_slice(&header_line).map_err(|e| format!("bad header: {e}"))?;
-        let spot = Spot::new(header.config)?;
+        // Lenient: a saved config may carry sizing quirks the pre-validation
+        // builder silently dropped; the arenas match that dropped-size tree,
+        // so the rebuild must reproduce it rather than reject the config.
+        let spot = Spot::new_lenient(header.config)?;
+        // Refuse malformed lock entries here, while no state depends on them:
+        // installed unchecked they would panic at the first query instead.
+        validate_locks(&spot, &header.locks).map_err(|e| format!("bad lock section: {e}"))?;
         let mut solver = Solver::with_storage(Arc::new(spot), storage);
         solver.iteration = header.iteration;
         solver.locks = header.locks.into_iter().collect();

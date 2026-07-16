@@ -906,6 +906,112 @@ fn hero_off_restores_explicit_frozen_seats() {
     );
 }
 
+/// REGRESSION: an explicitly frozen seat must be REFUSED as hero. Hero entry
+/// zeroes the hero's strategy sums ("converges fresh") and hero exit restores
+/// the pre-hero frozen flags, so pin BB -> set_hero(BB) -> hero off used to
+/// re-freeze BB over zeroed sums — the seat then played uniform random
+/// forever while labeled frozen (the frozen-block discount skip preserves
+/// the zeros), bypassing the uniform-pin guards in set_table and set_hero.
+#[test]
+fn frozen_seat_refused_as_hero() {
+    let eq = table();
+    let mut s = PreflopSolver::new(hu_push_fold_config(10.0), eq).unwrap();
+    for _ in 0..300 {
+        s.iterate();
+    }
+    // pin BB (seat 1) "as solved", then solve on so learning state is live
+    s.set_table(vec![false, true], vec![None, None]).unwrap();
+    for _ in 0..50 {
+        s.iterate();
+    }
+    let node = (0..s.nodes.len())
+        .find(|&i| s.nodes[i].kind == 0 && s.nodes[i].actor == 1)
+        .unwrap();
+    let pinned = s.average_strategy(node);
+    let iter_before = s.iteration;
+    // the confirmed failure sequence starts here — it must be refused
+    let err = s.set_hero(Some(1)).unwrap_err();
+    assert!(err.contains("frozen"), "refusal must name the freeze, got: {err}");
+    // ...and refused BEFORE any state is touched: no hero, flags intact,
+    // learning not reset
+    assert_eq!(s.seat_frozen, vec![false, true]);
+    assert_eq!(s.iteration, iter_before, "refusal must not reset learning");
+    s.set_hero(None).unwrap();
+    assert_eq!(s.seat_frozen, vec![false, true]);
+    // the pinned average survives further solving, and is nowhere near the
+    // uniform fallback the old sequence left behind
+    for _ in 0..300 {
+        s.iterate();
+    }
+    let after = s.average_strategy(node);
+    let moved = pinned
+        .iter()
+        .zip(after.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0f32, f32::max);
+    assert!(moved < 1e-4, "pinned average moved by {moved}");
+    let na = s.nodes[node].actions.len();
+    let uni = 1.0 / na as f32;
+    let max_dev = after.iter().map(|x| (x - uni).abs()).fold(0f32, f32::max);
+    assert!(
+        max_dev > 0.3,
+        "frozen seat plays ~uniform (max dev {max_dev}) — its pinned average was wiped"
+    );
+    // the live seat is still a legal hero; while hero mode is active every
+    // villain is hero-frozen, so the guard must consult the TABLE's flags:
+    // switching hero onto the pinned seat is still refused, switching back
+    // off still restores the pin
+    s.set_hero(Some(0)).unwrap();
+    let err = s.set_hero(Some(1)).unwrap_err();
+    assert!(err.contains("frozen"), "hero switch onto the pinned seat, got: {err}");
+    assert_eq!(s.hero, Some(0), "failed switch must leave hero mode as it was");
+    s.set_hero(None).unwrap();
+    assert_eq!(s.seat_frozen, vec![false, true]);
+}
+
+/// The one exemption from the frozen-hero refusal: a FULLY ruled seat. Its
+/// profile forces every node, so its strategy sums never matter — the
+/// hero-entry reset cannot corrupt its play (same exemption set_table's
+/// uniform-pin guard makes).
+#[test]
+fn fully_ruled_frozen_seat_allowed_as_hero() {
+    let eq = table();
+    let mut s = PreflopSolver::new(hu_limp_config(), eq).unwrap();
+    for _ in 0..200 {
+        s.iterate();
+    }
+    let mut buckets: Vec<Option<BucketPolicy>> = vec![None; NUM_BUCKETS];
+    for b in 0..NUM_BUCKETS {
+        buckets[b] = Some(flat_policy(1.0, 0.0)); // never folds, never raises
+    }
+    s.set_table(
+        vec![true, false],
+        vec![Some(SeatProfile { name: "station".into(), buckets, postflop: None }), None],
+    )
+    .unwrap();
+    for _ in 0..50 {
+        s.iterate();
+    }
+    s.set_hero(Some(0)).unwrap();
+    for _ in 0..50 {
+        s.iterate();
+    }
+    s.set_hero(None).unwrap();
+    assert_eq!(s.seat_frozen, vec![true, false]);
+    // the profile rules the seat again — no uniform fallback possible
+    let sigma = s.average_strategy(0);
+    let pass = s.nodes[0]
+        .actions
+        .iter()
+        .position(|a| a.kind == "check" || a.kind == "call")
+        .unwrap();
+    let aa = solver::preflop::equity::class_index(12, 12, false);
+    assert!(
+        (sigma[pass * NUM_CLASSES + aa] - 1.0).abs() < 1e-6,
+        "profile must rule the restored frozen seat"
+    );
+}
+
 /// Hero mode on a fully-ruled seat computes that seat's FREE max exploit:
 /// the hero is exempt from its own profile (otherwise the solve is a no-op
 /// that returns the profile itself), and the profile snaps back when hero

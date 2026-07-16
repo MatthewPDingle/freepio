@@ -84,6 +84,65 @@ fn raise_multiple_in_ip_donk_list_is_ignored() {
     Spot::new(config).expect("IP donk list is never consumed");
 }
 
+/// Lenient (save-load) builds must reproduce the legacy builder exactly: the
+/// raise-only size is dropped silently and the tree layout is byte-identical
+/// to a build without it — pre-fix .gto arenas were sized against that tree.
+#[test]
+fn lenient_build_matches_legacy_dropped_size_layout() {
+    let mut with_token = flop_config();
+    with_token.tree.oop[0].bet = parse_sizes("2.5x, 50").unwrap();
+    let legacy = flop_config(); // same config, minus the dropped "2.5x"
+
+    assert!(
+        Spot::new(with_token.clone()).is_err(),
+        "strict build must keep rejecting the raise-only bet size"
+    );
+    let lenient = Spot::new_lenient(with_token).expect("lenient build must succeed");
+    let legacy = Spot::new(legacy).unwrap();
+    assert_eq!(lenient.tree.data_size, legacy.tree.data_size);
+    assert_eq!(lenient.tree.children, legacy.tree.children);
+    assert_eq!(lenient.tree.actions, legacy.tree.actions);
+    assert_eq!(
+        serde_json::to_string(&lenient.tree.nodes).unwrap(),
+        serde_json::to_string(&legacy.tree.nodes).unwrap(),
+        "lenient rebuild must be byte-identical to the legacy dropped-size tree"
+    );
+}
+
+/// The donk-list variant of the same invariant. Legacy subtlety: with
+/// add_allin set, a donk list holding only "3x" degraded to all-in-only
+/// donks (the list counted as non-empty, so the all-in was still offered) —
+/// NOT to no donks at all. The lenient build must match that, i.e. equal a
+/// donk list of just "a".
+#[test]
+fn lenient_build_matches_legacy_allin_only_donks() {
+    let mut with_token = flop_config();
+    with_token.tree.add_allin = true;
+    with_token.tree.oop[1].donk = parse_sizes("3x").unwrap();
+    let mut legacy = flop_config();
+    legacy.tree.add_allin = true;
+    legacy.tree.oop[1].donk = parse_sizes("a").unwrap();
+
+    assert!(Spot::new(with_token.clone()).is_err());
+    let lenient = Spot::new_lenient(with_token).expect("lenient build must succeed");
+    let legacy = Spot::new(legacy).unwrap();
+    assert_eq!(lenient.tree.data_size, legacy.tree.data_size);
+    assert_eq!(lenient.tree.children, legacy.tree.children);
+    assert_eq!(lenient.tree.actions, legacy.tree.actions);
+}
+
+/// Lenient mode relaxes only the sizing check — the node budget must still
+/// abort an oversized lenient rebuild (peek_save vets under a memory cap).
+#[test]
+fn lenient_build_still_enforces_node_budget() {
+    let mut config = flop_config();
+    config.tree.oop[0].bet = parse_sizes("2.5x, 50").unwrap();
+    let err = Spot::new_lenient_with_limit(config, Some(10))
+        .err()
+        .expect("expected a budget error");
+    assert!(err.contains("max_nodes"), "error should name the budget: {err}");
+}
+
 /// Negative rake used to pass validation and pay the winner more than the
 /// pot at every terminal.
 #[test]

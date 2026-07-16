@@ -220,6 +220,25 @@ struct BuildState {
     checked: bool,
 }
 
+/// How strictly the builder validates the sizing config.
+///
+/// `Strict` is for every NEW build: a raise-only size ("2.5x") in a
+/// consumed bet/donk list is a build error, because the size the user
+/// configured would otherwise silently vanish from the solved tree.
+///
+/// `LenientLoad` is for rebuilding a tree from a SAVED config only: it
+/// reproduces the legacy pre-validation behavior exactly (the raise-only
+/// size is silently dropped at action generation), so a .gto file written
+/// before the validation existed rebuilds the byte-identical tree layout
+/// its arenas were sized against and keeps loading. It relaxes only this
+/// check — configs whose pre-fix solve was itself invalid (e.g. bad rake)
+/// are still rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Strictness {
+    Strict,
+    LenientLoad,
+}
+
 pub struct TreeBuilder<'a> {
     config: &'a TreeConfig,
     root_street: u8,
@@ -254,6 +273,21 @@ impl<'a> TreeBuilder<'a> {
         num_hands: [usize; 2],
         max_nodes: Option<usize>,
     ) -> Result<Tree, String> {
+        Self::build_with_options(config, board, num_hands, max_nodes, Strictness::Strict)
+    }
+
+    /// [`TreeBuilder::build_with_limit`] with explicit [`Strictness`]. Every
+    /// new build must use `Strict` (the wrappers above do); `LenientLoad` is
+    /// reserved for rebuilding a tree from a saved config, where layout
+    /// compatibility with the pre-validation builder matters more than
+    /// flagging a size the legacy builder silently dropped.
+    pub fn build_with_options(
+        config: &'a TreeConfig,
+        board: &[u8],
+        num_hands: [usize; 2],
+        max_nodes: Option<usize>,
+        strictness: Strictness,
+    ) -> Result<Tree, String> {
         if !(3..=5).contains(&board.len()) {
             return Err("board must have 3 to 5 cards".to_string());
         }
@@ -266,24 +300,29 @@ impl<'a> TreeBuilder<'a> {
         // used to be dropped silently, solving a tree missing a size the
         // user configured. Only lists the build can consume are checked
         // (nothing below the root street is read, and IP never donks).
-        for (player, streets) in [("OOP", &config.oop), ("IP", &config.ip)] {
-            for street in root_street as usize..3 {
-                let sizing = &streets[street];
-                let donk_used = player == "OOP" && street > root_street as usize;
-                for (field, list, used) in [
-                    ("bet", &sizing.bet, true),
-                    ("donk", &sizing.donk, donk_used),
-                ] {
-                    if !used {
-                        continue;
-                    }
-                    for size in list {
-                        if let BetSize::PrevMult(m) = size {
-                            let street_name = ["flop", "turn", "river"][street];
-                            return Err(format!(
-                                "{street_name} {player} {field}: '{m}x' is a \
-                                 raise-only size — use % of pot or 'a'"
-                            ));
+        // LenientLoad skips the check: saves written before it existed carry
+        // such configs, and their arenas match the tree with the size
+        // dropped, which `legal_actions` still reproduces.
+        if strictness == Strictness::Strict {
+            for (player, streets) in [("OOP", &config.oop), ("IP", &config.ip)] {
+                for street in root_street as usize..3 {
+                    let sizing = &streets[street];
+                    let donk_used = player == "OOP" && street > root_street as usize;
+                    for (field, list, used) in [
+                        ("bet", &sizing.bet, true),
+                        ("donk", &sizing.donk, donk_used),
+                    ] {
+                        if !used {
+                            continue;
+                        }
+                        for size in list {
+                            if let BetSize::PrevMult(m) = size {
+                                let street_name = ["flop", "turn", "river"][street];
+                                return Err(format!(
+                                    "{street_name} {player} {field}: '{m}x' is a \
+                                     raise-only size — use % of pot or 'a'"
+                                ));
+                            }
                         }
                     }
                 }
@@ -418,7 +457,10 @@ impl<'a> TreeBuilder<'a> {
                 for size in size_list {
                     let to = match size {
                         BetSize::PotPct(p) => p / 100.0 * pot,
-                        BetSize::PrevMult(_) => continue, // raise-only (rejected up front in build)
+                        // Raise-only: rejected up front in strict builds. The
+                        // silent drop must stay for LenientLoad — old saves'
+                        // arenas were sized against the dropped-size tree.
+                        BetSize::PrevMult(_) => continue,
                         BetSize::AllIn => max_to,
                     };
                     candidates.push(to);

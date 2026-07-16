@@ -813,11 +813,32 @@ impl PreflopSolver {
     /// fresh instead of blending into the old equilibrium average, and
     /// exempts the hero from its own seat profile (a fully-ruled hero could
     /// never learn — the "exploit" would be the profile itself). Leaving
-    /// hero mode restores the frozen flags the table had before it.
+    /// hero mode restores the frozen flags the table had before it. A seat
+    /// the TABLE froze (pinned "as solved") is refused as hero unless fully
+    /// ruled — the entry reset would wipe the pinned average that the
+    /// hero-exit restore re-freezes it to.
     pub fn set_hero(&mut self, seat: Option<usize>) -> Result<(), String> {
         match seat {
             Some(h) if h >= self.n => Err("no such seat".into()),
             Some(h) => {
+                // An explicitly frozen seat may not become hero: hero entry
+                // zeroes the hero's strategy sums ("converges fresh"), so
+                // hero-exit would restore the frozen flag over zeroed sums —
+                // the seat would play uniform random while labeled frozen,
+                // the exact state the set_table guard and the villain guard
+                // just below exist to forbid. Check the TABLE's flags
+                // (pre_hero_frozen while hero mode is active — every villain
+                // is hero-frozen, and switching hero must stay legal). A
+                // fully-ruled seat is exempt, as in set_table: its profile
+                // forces every node, so its sums never matter.
+                let table_frozen =
+                    self.pre_hero_frozen.as_deref().unwrap_or(&self.seat_frozen);
+                if table_frozen[h] && !fully_ruled(&self.seat_profiles[h]) {
+                    return Err(format!(
+                        "seat {} is frozen — unfreeze it before making it hero; hero mode would discard its pinned average",
+                        self.cfg.positions[h]
+                    ));
+                }
                 // freezing an unsolved, unmodeled seat = uniform random play
                 if self.iteration == 0 {
                     for i in 0..self.n {
