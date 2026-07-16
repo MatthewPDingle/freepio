@@ -1,0 +1,398 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - text: GTOpen
+        - emphasis [ref=e5]: open-source solver
+      - navigation [ref=e6]:
+        - button "00 · PREFLOP LAB" [ref=e7] [cursor=pointer]
+        - button "01 · SETUP" [ref=e8] [cursor=pointer]
+        - button "02 · SOLVE" [ref=e9] [cursor=pointer]
+        - button "03 · BROWSE" [active] [ref=e10] [cursor=pointer]
+        - button "04 · REPORTS" [ref=e11] [cursor=pointer]
+      - generic [ref=e12]:
+        - generic [ref=e1550]:
+          - generic [ref=e1551]: iter 9
+          - button "RE-SOLVE" [ref=e1554] [cursor=pointer]
+        - generic [ref=e13]: stopped
+    - main [ref=e1555]:
+      - generic [ref=e1557]:
+        - generic [ref=e1558] [cursor=pointer]:
+          - generic [ref=e1559]:
+            - generic [ref=e1560]: FLOP
+            - generic [ref=e1561]: "60.0"
+          - generic [ref=e1562]:
+            - generic [ref=e1563]:
+              - generic [ref=e1564]: K
+              - generic [ref=e1565]: ♠
+            - generic [ref=e1566]:
+              - generic [ref=e1567]: "7"
+              - generic [ref=e1568]: ♥
+            - generic [ref=e1569]:
+              - generic [ref=e1570]: "2"
+              - generic [ref=e1571]: ♦
+        - generic [ref=e1572]:
+          - generic [ref=e1573]:
+            - generic [ref=e1574]: OOP
+            - generic [ref=e1575]: "970"
+          - button "Check" [ref=e1576] [cursor=pointer]
+          - button "Bet 19.80 (33%)" [ref=e1577] [cursor=pointer]
+        - generic [ref=e1578] [cursor=pointer]: TURN
+      - generic [ref=e1583]:
+        - generic [ref=e1584]:
+          - generic [ref=e1585]:
+            - button "OOP" [ref=e1586] [cursor=pointer]
+            - button "IP" [ref=e1587] [cursor=pointer]
+          - generic [ref=e1588]:
+            - button "STRAT" [ref=e1589] [cursor=pointer]
+            - button "EV" [ref=e1590] [cursor=pointer]
+            - button "EQ" [ref=e1591] [cursor=pointer]
+            - button "EXPLOIT" [ref=e1592] [cursor=pointer]
+          - button "▦ display ▾" [ref=e1594] [cursor=pointer]
+        - generic [ref=e1595]: pot 60.0 · OOP in 30.0 / IP in 30.0
+      - generic [ref=e1596]:
+        - generic [ref=e1597]:
+          - generic [ref=e1598]:
+            - generic [ref=e1599] [cursor=pointer]: AA
+            - generic [ref=e1600] [cursor=pointer]: AKs
+            - generic [ref=e1601] [cursor=pointer]: AQs
+            - generic [ref=e1602] [cursor=pointer]: AJs
+            - generic [ref=e1603] [cursor=pointer]: ATs
+            - generic [ref=e1604] [cursor=pointer]: A9s
+            - generic [ref=e1605] [cursor=pointer]:
+              - generic: A8s
+              - generic: "-19.9"
+            - generic [ref=e1609] [cursor=pointer]:
+              - generic: A7s
+              - generic: "9.15"
+            - generic [ref=e1613] [cursor=pointer]:
+              - generic: A6s
+              - generic: "-18.3"
+            - generic [ref=e1617] [cursor=pointer]:
+              - generic: A5s
+              - generic: "-17.2"
+            - generic [ref=e1621] [cursor=pointer]:
+              - generic: A4s
+              - generic: "-16.8"
+            - generic [ref=e1625] [cursor=pointer]:
+              - generic: A3s
+              - generic: "-16.5"
+            - generic [ref=e1629] [cursor=pointer]:
+              - generic: A2s
+              - generic: "0.63"
+            - generic [ref=e1633] [cursor=pointer]: AKo
+            - generic [ref=e1634] [cursor=pointer]: KK
+            - generic [ref=e1635] [cursor=pointer]: KQs
+            - generic [ref=e1636] [cursor=pointer]: KJs
+            - generic [ref=e1637] [cursor=pointer]: KTs
+            - generic [ref=e1638] [cursor=pointer]:
+              - generic: K9s
+              - generic: "54.4"
+            - generic [ref=e1642] [cursor=pointer]:
+              - generic: K8s
+              - generic: "55.6"
+            - generic [ref=e1646] [cursor=pointer]:
+              - generic: K7s
+              - generic: "252"
+            - generic [ref=e1650] [cursor=pointer]:
+              - generic: K6s
+              - generic: "53.5"
+            - generic [ref=e1654] [cursor=pointer]: K5s
+            - generic [ref=e1655] [cursor=pointer]: K4s
+            - generic [ref=e1656] [cursor=pointer]: K3s
+            - generic [ref=e1657] [cursor=pointer]: K2s
+            - generic [ref=e1658] [cursor=pointer]: AQo
+            - generic [ref=e1659] [cursor=pointer]: KQo
+            - generic [ref=e1660] [cursor=pointer]: QQ
+            - generic [ref=e1661] [cursor=pointer]: QJs
+            - generic [ref=e1662] [cursor=pointer]: QTs
+            - generic [ref=e1663] [cursor=pointer]:
+              - generic: Q9s
+              - generic: "-14.0"
+            - generic [ref=e1667] [cursor=pointer]:
+              - generic: Q8s
+              - generic: "-15.6"
+            - generic [ref=e1671] [cursor=pointer]:
+              - generic: Q7s
+              - generic: "5.79"
+            - generic [ref=e1675] [cursor=pointer]:
+              - generic: Q6s
+              - generic: "-15.4"
+            - generic [ref=e1679] [cursor=pointer]: Q5s
+            - generic [ref=e1680] [cursor=pointer]: Q4s
+            - generic [ref=e1681] [cursor=pointer]: Q3s
+            - generic [ref=e1682] [cursor=pointer]: Q2s
+            - generic [ref=e1683] [cursor=pointer]:
+              - generic: AJo
+              - generic: "-20.7"
+            - generic [ref=e1687] [cursor=pointer]: KJo
+            - generic [ref=e1688] [cursor=pointer]:
+              - generic: QJo
+              - generic: "-14.5"
+            - generic [ref=e1692] [cursor=pointer]: JJ
+            - generic [ref=e1693] [cursor=pointer]: JTs
+            - generic [ref=e1694] [cursor=pointer]:
+              - generic: J9s
+              - generic: "-13.8"
+            - generic [ref=e1698] [cursor=pointer]:
+              - generic: J8s
+              - generic: "-13.6"
+            - generic [ref=e1702] [cursor=pointer]:
+              - generic: J7s
+              - generic: "5.85"
+            - generic [ref=e1706] [cursor=pointer]: J6s
+            - generic [ref=e1707] [cursor=pointer]: J5s
+            - generic [ref=e1708] [cursor=pointer]: J4s
+            - generic [ref=e1709] [cursor=pointer]: J3s
+            - generic [ref=e1710] [cursor=pointer]: J2s
+            - generic [ref=e1711] [cursor=pointer]:
+              - generic: ATo
+              - generic: "-22.2"
+            - generic [ref=e1715] [cursor=pointer]:
+              - generic: KTo
+              - generic: "62.3"
+            - generic [ref=e1719] [cursor=pointer]:
+              - generic: QTo
+              - generic: "-12.9"
+            - generic [ref=e1723] [cursor=pointer]:
+              - generic: JTo
+              - generic: "-12.6"
+            - generic [ref=e1727] [cursor=pointer]: TT
+            - generic [ref=e1728] [cursor=pointer]:
+              - generic: T9s
+              - generic: "-12.4"
+            - generic [ref=e1732] [cursor=pointer]:
+              - generic: T8s
+              - generic: "-11.7"
+            - generic [ref=e1736] [cursor=pointer]: T7s
+            - generic [ref=e1737] [cursor=pointer]: T6s
+            - generic [ref=e1738] [cursor=pointer]: T5s
+            - generic [ref=e1739] [cursor=pointer]: T4s
+            - generic [ref=e1740] [cursor=pointer]: T3s
+            - generic [ref=e1741] [cursor=pointer]: T2s
+            - generic [ref=e1742] [cursor=pointer]:
+              - generic: A9o
+              - generic: "-22.7"
+            - generic [ref=e1746] [cursor=pointer]:
+              - generic: K9o
+              - generic: "45.8"
+            - generic [ref=e1750] [cursor=pointer]: Q9o
+            - generic [ref=e1751] [cursor=pointer]: J9o
+            - generic [ref=e1752] [cursor=pointer]:
+              - generic: T9o
+              - generic: "-12.2"
+            - generic [ref=e1756] [cursor=pointer]: "99"
+            - generic [ref=e1757] [cursor=pointer]:
+              - generic: 98s
+              - generic: "-12.2"
+            - generic [ref=e1761] [cursor=pointer]:
+              - generic: 97s
+              - generic: "2.75"
+            - generic [ref=e1765] [cursor=pointer]: 96s
+            - generic [ref=e1766] [cursor=pointer]: 95s
+            - generic [ref=e1767] [cursor=pointer]: 94s
+            - generic [ref=e1768] [cursor=pointer]: 93s
+            - generic [ref=e1769] [cursor=pointer]: 92s
+            - generic [ref=e1770] [cursor=pointer]:
+              - generic: A8o
+              - generic: "-20.7"
+            - generic [ref=e1774] [cursor=pointer]: K8o
+            - generic [ref=e1775] [cursor=pointer]: Q8o
+            - generic [ref=e1776] [cursor=pointer]: J8o
+            - generic [ref=e1777] [cursor=pointer]: T8o
+            - generic [ref=e1778] [cursor=pointer]:
+              - generic: 98o
+              - generic: "-11.4"
+            - generic [ref=e1782] [cursor=pointer]: "88"
+            - generic [ref=e1783] [cursor=pointer]:
+              - generic: 87s
+              - generic: "5.66"
+            - generic [ref=e1787] [cursor=pointer]:
+              - generic: 86s
+              - generic: "-11.7"
+            - generic [ref=e1791] [cursor=pointer]: 85s
+            - generic [ref=e1792] [cursor=pointer]: 84s
+            - generic [ref=e1793] [cursor=pointer]: 83s
+            - generic [ref=e1794] [cursor=pointer]: 82s
+            - generic [ref=e1795] [cursor=pointer]: A7o
+            - generic [ref=e1796] [cursor=pointer]: K7o
+            - generic [ref=e1797] [cursor=pointer]: Q7o
+            - generic [ref=e1798] [cursor=pointer]: J7o
+            - generic [ref=e1799] [cursor=pointer]: T7o
+            - generic [ref=e1800] [cursor=pointer]: 97o
+            - generic [ref=e1801] [cursor=pointer]: 87o
+            - generic [ref=e1802] [cursor=pointer]: "77"
+            - generic [ref=e1803] [cursor=pointer]:
+              - generic: 76s
+              - generic: "4.70"
+            - generic [ref=e1807] [cursor=pointer]:
+              - generic: 75s
+              - generic: "4.59"
+            - generic [ref=e1811] [cursor=pointer]: 74s
+            - generic [ref=e1812] [cursor=pointer]: 73s
+            - generic [ref=e1813] [cursor=pointer]: 72s
+            - generic [ref=e1814] [cursor=pointer]: A6o
+            - generic [ref=e1815] [cursor=pointer]: K6o
+            - generic [ref=e1816] [cursor=pointer]: Q6o
+            - generic [ref=e1817] [cursor=pointer]: J6o
+            - generic [ref=e1818] [cursor=pointer]: T6o
+            - generic [ref=e1819] [cursor=pointer]: 96o
+            - generic [ref=e1820] [cursor=pointer]: 86o
+            - generic [ref=e1821] [cursor=pointer]: 76o
+            - generic [ref=e1822] [cursor=pointer]: "66"
+            - generic [ref=e1823] [cursor=pointer]:
+              - generic: 65s
+              - generic: "-11.0"
+            - generic [ref=e1827] [cursor=pointer]:
+              - generic: 64s
+              - generic: "-10.0"
+            - generic [ref=e1831] [cursor=pointer]: 63s
+            - generic [ref=e1832] [cursor=pointer]: 62s
+            - generic [ref=e1833] [cursor=pointer]: A5o
+            - generic [ref=e1834] [cursor=pointer]: K5o
+            - generic [ref=e1835] [cursor=pointer]: Q5o
+            - generic [ref=e1836] [cursor=pointer]: J5o
+            - generic [ref=e1837] [cursor=pointer]: T5o
+            - generic [ref=e1838] [cursor=pointer]: 95o
+            - generic [ref=e1839] [cursor=pointer]: 85o
+            - generic [ref=e1840] [cursor=pointer]: 75o
+            - generic [ref=e1841] [cursor=pointer]: 65o
+            - generic [ref=e1842] [cursor=pointer]:
+              - generic: "55"
+              - generic: "-17.1"
+            - generic [ref=e1846] [cursor=pointer]:
+              - generic: 54s
+              - generic: "-10.3"
+            - generic [ref=e1850] [cursor=pointer]: 53s
+            - generic [ref=e1851] [cursor=pointer]: 52s
+            - generic [ref=e1852] [cursor=pointer]: A4o
+            - generic [ref=e1853] [cursor=pointer]: K4o
+            - generic [ref=e1854] [cursor=pointer]: Q4o
+            - generic [ref=e1855] [cursor=pointer]: J4o
+            - generic [ref=e1856] [cursor=pointer]: T4o
+            - generic [ref=e1857] [cursor=pointer]: 94o
+            - generic [ref=e1858] [cursor=pointer]: 84o
+            - generic [ref=e1859] [cursor=pointer]: 74o
+            - generic [ref=e1860] [cursor=pointer]: 64o
+            - generic [ref=e1861] [cursor=pointer]: 54o
+            - generic [ref=e1862] [cursor=pointer]:
+              - generic: "44"
+              - generic: "-17.4"
+            - generic [ref=e1866] [cursor=pointer]: 43s
+            - generic [ref=e1867] [cursor=pointer]: 42s
+            - generic [ref=e1868] [cursor=pointer]: A3o
+            - generic [ref=e1869] [cursor=pointer]: K3o
+            - generic [ref=e1870] [cursor=pointer]: Q3o
+            - generic [ref=e1871] [cursor=pointer]: J3o
+            - generic [ref=e1872] [cursor=pointer]: T3o
+            - generic [ref=e1873] [cursor=pointer]: 93o
+            - generic [ref=e1874] [cursor=pointer]: 83o
+            - generic [ref=e1875] [cursor=pointer]: 73o
+            - generic [ref=e1876] [cursor=pointer]: 63o
+            - generic [ref=e1877] [cursor=pointer]: 53o
+            - generic [ref=e1878] [cursor=pointer]: 43o
+            - generic [ref=e1879] [cursor=pointer]:
+              - generic: "33"
+              - generic: "-18.0"
+            - generic [ref=e1883] [cursor=pointer]: 32s
+            - generic [ref=e1884] [cursor=pointer]: A2o
+            - generic [ref=e1885] [cursor=pointer]: K2o
+            - generic [ref=e1886] [cursor=pointer]: Q2o
+            - generic [ref=e1887] [cursor=pointer]: J2o
+            - generic [ref=e1888] [cursor=pointer]: T2o
+            - generic [ref=e1889] [cursor=pointer]: 92o
+            - generic [ref=e1890] [cursor=pointer]: 82o
+            - generic [ref=e1891] [cursor=pointer]: 72o
+            - generic [ref=e1892] [cursor=pointer]: 62o
+            - generic [ref=e1893] [cursor=pointer]: 52o
+            - generic [ref=e1894] [cursor=pointer]: 42o
+            - generic [ref=e1895] [cursor=pointer]: 32o
+            - generic [ref=e1896] [cursor=pointer]:
+              - generic: "22"
+              - generic: "323"
+          - generic [ref=e1900]:
+            - generic [ref=e1901]: Check
+            - generic [ref=e1903]: Bet 19.80 (33%)
+        - generic [ref=e1905]:
+          - generic [ref=e1909]:
+            - generic [ref=e1910]:
+              - generic [ref=e1911]: OOP
+              - generic [ref=e1913]:
+                - generic [ref=e1914]:
+                  - generic [ref=e1915]: EV
+                  - generic [ref=e1916]: "-0.09"
+                - generic [ref=e1917]:
+                  - generic [ref=e1918]: Equity
+                  - generic [ref=e1919]: 39.4%
+                - generic [ref=e1920]:
+                  - generic [ref=e1921]: EQR
+                  - generic [ref=e1922]: "-0%"
+                - generic [ref=e1923]:
+                  - generic [ref=e1924]: Combos
+                  - generic [ref=e1925]: "250.0"
+            - generic [ref=e1926]:
+              - generic [ref=e1927]: IP
+              - generic [ref=e1929]:
+                - generic [ref=e1930]:
+                  - generic [ref=e1931]: EV
+                  - generic [ref=e1932]: "59.3"
+                - generic [ref=e1933]:
+                  - generic [ref=e1934]: Equity
+                  - generic [ref=e1935]: 60.5%
+                - generic [ref=e1936]:
+                  - generic [ref=e1937]: EQR
+                  - generic [ref=e1938]: 164%
+                - generic [ref=e1939]:
+                  - generic [ref=e1940]: Combos
+                  - generic [ref=e1941]: "319.0"
+          - generic [ref=e1942]:
+            - heading "OOP to act — street flop" [level=2] [ref=e1943]
+            - generic [ref=e1944]:
+              - generic [ref=e1945]:
+                - generic [ref=e1946] [cursor=pointer]:
+                  - generic [ref=e1947]: Check
+                  - generic [ref=e1948]:
+                    - generic [ref=e1949]: 35.2%
+                    - generic [ref=e1950]:
+                      - text: "88.1"
+                      - generic [ref=e1951]: combos
+                - generic [ref=e1952] [cursor=pointer]:
+                  - generic [ref=e1953]: Bet 19.80 (33%)
+                  - generic [ref=e1954]:
+                    - generic [ref=e1955]: 64.8%
+                    - generic [ref=e1956]:
+                      - text: "161.9"
+                      - generic [ref=e1957]: combos
+              - generic [ref=e1961]:
+                - generic [ref=e1962]:
+                  - text: NODE LOCKING
+                  - generic [ref=e1963]: "?"
+                - generic [ref=e1964]:
+                  - button "Overall %" [ref=e1965] [cursor=pointer]
+                  - button "Per hand" [ref=e1966] [cursor=pointer]
+                - generic [ref=e1967]:
+                  - generic [ref=e1968]: Set how often the whole range takes each action, then LOCK FREQUENCIES. The solved strategy is rebalanced to hit your numbers (the pre-filled values are the current solution). Then RE-SOLVE to make the rest of the tree adapt to the read — or open EXPLOIT to punish it directly, no re-solve needed.
+                  - generic [ref=e1969]:
+                    - generic [ref=e1970]:
+                      - generic [ref=e1972]: Check
+                      - spinbutton "Check %" [ref=e1973]: "35"
+                      - generic [ref=e1974]: "%"
+                    - generic [ref=e1975]:
+                      - generic [ref=e1977]: Bet 19.80 (33%)
+                      - spinbutton "Bet 19.80 (33%) %" [ref=e1978]: "65"
+                      - generic [ref=e1979]: "%"
+                  - generic [ref=e1980]:
+                    - generic [ref=e1981]: total 100%
+                    - button "normalize" [ref=e1982] [cursor=pointer]
+                  - generic [ref=e1983]:
+                    - button "LOCK FREQUENCIES" [ref=e1984] [cursor=pointer]
+                    - button "LOCK AS SOLVED" [ref=e1985] [cursor=pointer]
+          - generic [ref=e1986]:
+            - generic [ref=e1987]:
+              - button "HANDS" [ref=e1988] [cursor=pointer]
+              - button "SUMMARY" [ref=e1989] [cursor=pointer]
+              - button "FILTERS" [ref=e1990] [cursor=pointer]
+              - button "BLOCKERS" [ref=e1991] [cursor=pointer]
+            - generic [ref=e1992]: hover a hand in the matrix — click to pin
+  - generic [ref=e16]: solve stopped — exploitability 0.000% pot
+  - generic: SB takes All-in 10 58.2% of the time here — the line follows this action. Click to view the moment just after it.

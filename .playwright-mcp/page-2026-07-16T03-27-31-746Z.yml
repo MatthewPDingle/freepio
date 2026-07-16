@@ -1,0 +1,67 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - text: GTOpen
+        - emphasis [ref=e5]: open-source solver
+      - navigation [ref=e6]:
+        - button "00 · PREFLOP LAB" [ref=e7] [cursor=pointer]
+        - button "01 · SETUP" [ref=e8] [cursor=pointer]
+        - button "02 · SOLVE" [active] [ref=e9] [cursor=pointer]
+        - button "03 · BROWSE" [ref=e10] [cursor=pointer]
+        - button "04 · REPORTS" [ref=e11] [cursor=pointer]
+      - generic [ref=e12]:
+        - generic [ref=e1550]:
+          - generic [ref=e1551]: iter 9
+          - button "RE-SOLVE" [ref=e1554] [cursor=pointer]
+        - generic [ref=e13]: stopped
+    - main [ref=e1509]:
+      - generic [ref=e1510]:
+        - generic [ref=e1511]:
+          - heading "Run" [level=2] [ref=e1512]
+          - generic [ref=e1513]:
+            - generic [ref=e1514]:
+              - text: max iterations
+              - spinbutton "max iterations" [ref=e1515]: "40"
+            - generic [ref=e1516]:
+              - text: target exploit % pot
+              - spinbutton "target exploit % pot" [ref=e1517]: "0.3"
+            - generic [ref=e1518]:
+              - text: check every
+              - spinbutton "check every" [ref=e1519]: "10"
+          - generic [ref=e1520]:
+            - button "SOLVE" [ref=e1521] [cursor=pointer]
+            - button "STOP" [ref=e1522] [cursor=pointer]
+          - generic [ref=e1523]: board Ks7h2d · 1,245,971 nodes · 500,748 decision points · hands 250/319
+          - generic [ref=e1524]: RAM ~1.25 GB · VRAM ~7.43 GB · GPU off — solves on CPU
+          - heading "Persistence ?" [level=2] [ref=e1526]:
+            - text: Persistence
+            - generic [ref=e1527]: "?"
+          - generic [ref=e1528]:
+            - textbox "save name…" [ref=e1529]
+            - button "save" [ref=e1530] [cursor=pointer]
+          - generic [ref=e1531]:
+            - combobox [ref=e1532]:
+              - option "saved solves…" [selected]
+              - option "UTG vs BTN Maniac 3-bet"
+              - option "exploit-e2e"
+            - button "load" [ref=e1533] [cursor=pointer]
+        - generic [ref=e1534]:
+          - heading "Convergence" [level=2] [ref=e1535]
+          - generic [ref=e1536]:
+            - generic [ref=e1537]:
+              - generic [ref=e1538]: exploitability
+              - generic [ref=e1539]: —
+              - text: "% of pot"
+            - generic [ref=e1540]:
+              - generic [ref=e1541]: iteration
+              - generic [ref=e1542]: "9"
+            - generic [ref=e1543]:
+              - generic [ref=e1544]: elapsed
+              - generic [ref=e1545]: 59s
+            - generic [ref=e1546]:
+              - generic [ref=e1547]: speed
+              - generic [ref=e1548]: "0.2"
+              - text: iter/s
+  - generic [ref=e16]: solve stopped — exploitability 0.000% pot
+  - generic: SB takes All-in 10 58.2% of the time here — the line follows this action. Click to view the moment just after it.
