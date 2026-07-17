@@ -2,7 +2,7 @@
 //! over-budget trees must be rejected with clear errors instead of silently
 //! solving an unintended tree (or OOMing mid-build).
 
-use solver::tree::{parse_sizes, StreetSizing, TreeConfig};
+use solver::tree::{parse_sizes, BetSize, StreetSizing, TreeConfig};
 use solver::{Spot, SpotConfig};
 
 fn sizing(bet: &str, raise: &str) -> StreetSizing {
@@ -193,4 +193,91 @@ fn max_nodes_budget_admits_trees_within_it() {
     let n = Spot::new(config.clone()).unwrap().tree.nodes.len();
     let spot = Spot::new_with_limit(config, Some(n + 1000)).expect("within budget");
     assert_eq!(spot.tree.nodes.len(), n, "budget must not change the tree");
+}
+
+/// f64::from_str happily parses "nan"/"inf", and NaN is false under every
+/// `<=` comparison, so these tokens used to slip through parse_sizes and
+/// panic dedupe_amounts' partial_cmp sort mid-build (finding #8). The
+/// pot-percent syntax must reject every non-finite token by name.
+#[test]
+fn parse_sizes_rejects_non_finite_percents() {
+    for tok in ["NaN", "nan", "-nan", "inf", "-inf", "infinity", "-infinity"] {
+        let err = parse_sizes(tok)
+            .err()
+            .unwrap_or_else(|| panic!("token {tok:?} must be rejected"));
+        assert!(
+            err.to_ascii_lowercase().contains(&tok.to_ascii_lowercase()),
+            "error should name the token {tok:?}: {err}"
+        );
+    }
+    // sanity: mixed lists containing one still fail as a whole
+    assert!(parse_sizes("33, nan, 75").is_err());
+}
+
+/// Same for the raise-multiple syntax ("NaNx"): NaN is false under `<= 1.0`
+/// too, so "nanx"/"infx" used to come back as PrevMult(NaN)/PrevMult(inf).
+#[test]
+fn parse_sizes_rejects_non_finite_multiples() {
+    for tok in ["NaNx", "nanx", "-nanx", "infx", "-infx", "infinityx"] {
+        assert!(
+            parse_sizes(tok).is_err(),
+            "raise-multiple token {tok:?} must be rejected"
+        );
+    }
+}
+
+/// Positive control: ordinary size lists still parse after the finiteness
+/// checks.
+#[test]
+fn parse_sizes_still_accepts_ordinary_lists() {
+    let sizes = parse_sizes("33 75, 2.5x, a").expect("normal list must parse");
+    assert_eq!(
+        sizes,
+        vec![
+            BetSize::PotPct(33.0),
+            BetSize::PotPct(75.0),
+            BetSize::PrevMult(2.5),
+            BetSize::AllIn
+        ]
+    );
+}
+
+/// A non-finite size that bypasses parse_sizes (programmatic construction,
+/// a hand-crafted config) must be a clean build error naming the field —
+/// not a panic in dedupe_amounts' sort.
+#[test]
+fn nan_bet_size_is_a_build_error_not_a_panic() {
+    let mut config = flop_config();
+    config.tree.oop[0].bet = vec![BetSize::PotPct(f64::NAN)];
+    let err = Spot::new(config).err().expect("expected a build error");
+    assert!(
+        err.contains("flop OOP bet") && err.contains("finite"),
+        "error should name the field and the problem: {err}"
+    );
+}
+
+/// Same for an infinite raise multiple in a raise list (a list the strict
+/// raise-only check does not cover).
+#[test]
+fn infinite_raise_size_is_a_build_error_not_a_panic() {
+    let mut config = flop_config();
+    config.tree.ip[0].raise = vec![BetSize::PrevMult(f64::INFINITY)];
+    let err = Spot::new(config).err().expect("expected a build error");
+    assert!(
+        err.contains("flop IP raise") && err.contains("finite"),
+        "error should name the field and the problem: {err}"
+    );
+}
+
+/// NaN pot/stack pass a plain `<= 0.0` check for the same reason; they must
+/// be rejected up front too.
+#[test]
+fn non_finite_pot_and_stack_are_rejected() {
+    let mut config = flop_config();
+    config.tree.starting_pot = f64::NAN;
+    assert!(Spot::new(config).is_err(), "NaN pot must be rejected");
+
+    let mut config = flop_config();
+    config.tree.effective_stack = f64::INFINITY;
+    assert!(Spot::new(config).is_err(), "infinite stack must be rejected");
 }

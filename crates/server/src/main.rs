@@ -20,6 +20,28 @@ fn bad_request(msg: impl Into<String>) -> ApiError {
     (StatusCode::BAD_REQUEST, msg.into())
 }
 
+/// Human-readable panic payload (panics carry a `&str` or `String`).
+fn panic_msg(p: &(dyn std::any::Any + Send)) -> &str {
+    p.downcast_ref::<&str>()
+        .copied()
+        .or_else(|| p.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic")
+}
+
+/// Lock a status mutex even if a panicking worker poisoned it. The unwind
+/// guards below MUST be able to clear their `running` state no matter where
+/// the panic hit, and clearing the poison keeps every handler's plain
+/// `.lock().unwrap()` working afterwards.
+fn lock_unpoisoned<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match m.lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            m.clear_poison();
+            poisoned.into_inner()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -82,6 +104,10 @@ struct PreflopStatus {
     hero: Option<usize>,
     /// Engine truth: per-seat frozen flags, positions order.
     frozen: Vec<bool>,
+    /// Set when the solve worker died on a panic (state goes to "stopped");
+    /// cleared when a new solve starts.
+    #[serde(default)]
+    error: String,
 }
 
 struct Session {
@@ -130,6 +156,10 @@ struct StatusInfo {
     history: Vec<HistoryPoint>,
     tree: Option<TreeInfo>,
     spot_request: Option<SpotRequest>,
+    /// Set when the solve worker died on a panic (state goes to "stopped");
+    /// cleared when a new solve starts.
+    #[serde(default)]
+    error: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -482,41 +512,59 @@ async fn start_solve(
         status.state = "running".to_string();
         status.gpu = false;
         status.gpu_note = String::new();
+        status.error = String::new();
         status.history.clear();
     }
 
     let handle = std::thread::spawn(move || {
-        // Per-run iteration budget: the solver's counter is CUMULATIVE (it
-        // survives stop/resume and save/load — DCFR discounting needs it),
-        // so this run measures itself against max_iterations from its own
-        // base. Without this, RE-SOLVE after a maxed-out or loaded solve
-        // exits after one iteration and never adapts to new locks.
-        let base = solver.lock().unwrap().iteration;
-        #[cfg(feature = "gpu")]
-        if gpu_enabled() {
-            match gpu_solve_loop(&solver, &stop, &lock_gen, &app, &req, base) {
-                Ok(()) => return,
-                Err(err) => {
-                    // gpu_solve_loop leaves the CPU solver on a COHERENT
-                    // regret+strategy checkpoint (see its doc comment); the
-                    // CPU loop resumes from that iteration.
-                    let resume_it = solver.lock().unwrap().iteration;
-                    println!(
-                        "gpu solve unavailable ({err}); falling back to CPU \
-                         (resuming from iteration {resume_it})"
-                    );
-                    let mut st = app.status.lock().unwrap();
-                    st.gpu = false;
-                    st.gpu_note = format!("GPU unavailable: {err} — running on CPU");
-                    // don't leave the counter/chart ahead of the state we
-                    // actually resume from
-                    st.iteration = resume_it;
-                    st.history.retain(|h| h.iteration <= resume_it);
+        // Unwind guard: the worker's "not running" states are set only on
+        // its normal exits, so an uncaught panic would leave state ==
+        // "running" forever and every later /api/solve would 409 until a
+        // rebuild. Catch it, record it, and always leave a resolvable state.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Per-run iteration budget: the solver's counter is CUMULATIVE
+            // (it survives stop/resume and save/load — DCFR discounting
+            // needs it), so this run measures itself against max_iterations
+            // from its own base. Without this, RE-SOLVE after a maxed-out or
+            // loaded solve exits after one iteration and never adapts to new
+            // locks.
+            let base = solver.lock().unwrap().iteration;
+            #[cfg(feature = "gpu")]
+            if gpu_enabled() {
+                match gpu_solve_loop(&solver, &stop, &lock_gen, &app, &req, base) {
+                    Ok(()) => return,
+                    Err(err) => {
+                        // gpu_solve_loop leaves the CPU solver on a COHERENT
+                        // regret+strategy checkpoint (see its doc comment);
+                        // the CPU loop resumes from that iteration.
+                        let resume_it = solver.lock().unwrap().iteration;
+                        println!(
+                            "gpu solve unavailable ({err}); falling back to CPU \
+                             (resuming from iteration {resume_it})"
+                        );
+                        let mut st = app.status.lock().unwrap();
+                        st.gpu = false;
+                        st.gpu_note = format!("GPU unavailable: {err} — running on CPU");
+                        // don't leave the counter/chart ahead of the state we
+                        // actually resume from
+                        st.iteration = resume_it;
+                        st.history.retain(|h| h.iteration <= resume_it);
+                    }
                 }
             }
+            let _ = &lock_gen;
+            cpu_solve_loop(&solver, &stop, &app, &req, base);
+        }));
+        if let Err(p) = result {
+            let msg = panic_msg(p.as_ref());
+            eprintln!("solve worker panicked: {msg}");
+            // un-poison the solver mutex so browse/save handlers keep
+            // working on the last coherent-enough state instead of panicking
+            solver.clear_poison();
+            let mut st = lock_unpoisoned(&app.status);
+            st.state = "stopped".to_string();
+            st.error = format!("solve crashed: {msg}");
         }
-        let _ = &lock_gen;
-        cpu_solve_loop(&solver, &stop, &app, &req, base);
     });
     session.worker = Some(handle);
     Ok(Json(serde_json::json!({"ok": true})))
@@ -991,6 +1039,7 @@ async fn pf_solve(
         }
         stop.store(false, Ordering::Relaxed);
         st.state = "running".into();
+        st.error = String::new();
     }
     // the previous worker (if any) has finished — its last act is setting a
     // non-"running" state — so this join is instant; it reaps the thread
@@ -999,6 +1048,13 @@ async fn pf_solve(
         let _ = h.join();
     }
     let handle = std::thread::spawn(move || {
+        // Unwind guard: like the postflop worker, state leaves "running"
+        // only on the loop's normal exits — an uncaught panic would 409
+        // every later pf_solve AND every pf_reject_if_running mutation
+        // (table, hero, locks) until a rebuild. The join in pf_solve stays
+        // instant too: even a panicked worker's last act is setting a
+        // non-"running" state.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let max = req.iterations.max(1);
         let check = req.check_every.max(1);
         let mut done = 0u32;
@@ -1168,6 +1224,17 @@ async fn pf_solve(
                     return;
                 }
             }
+        }
+        }));
+        if let Err(p) = result {
+            let msg = panic_msg(p.as_ref());
+            eprintln!("preflop solve worker panicked: {msg}");
+            // un-poison the solver mutex so browse/save handlers keep
+            // working instead of panicking on a poisoned lock
+            solver.clear_poison();
+            let mut st = lock_unpoisoned(&status);
+            st.state = "stopped".into();
+            st.error = format!("solve crashed: {msg}");
         }
     });
     session.worker = Some(handle);
@@ -1543,9 +1610,19 @@ async fn report_run(
     let app = state.clone();
     std::thread::spawn(move || {
         let t0 = std::time::Instant::now();
+        // Unwind guard: running=false was set only at the loop's normal end,
+        // so an uncaught panic anywhere in the worker (a solver bug, a bad
+        // save, an fs surprise) left running=true forever and every later
+        // /api/reports/run returned 409 until a server restart. The panic is
+        // recorded as the report error instead.
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut rows: Vec<serde_json::Value> = Vec::new();
         let mut err = String::new();
         let mut stopped = false;
+        // Claim the report file up front (empty partial): the first periodic
+        // write below overwrites a same-named file anyway, and the panic
+        // path outside may only annotate a file that belongs to THIS run.
+        let _ = write_report(&path, &req, &rows, false);
         // The same node budget + arena gate the BUILD TREE path applies:
         // reports.js sends the SETUP fields straight here without building,
         // so an oversized sizing config must abort cheaply mid-build instead
@@ -1671,11 +1748,25 @@ async fn report_run(
                 err = e;
             }
         }
-        let mut r = app.report.lock().unwrap();
+        (done, err)
+        }));
+        let mut r = lock_unpoisoned(&app.report);
         r.running = false;
-        r.done = done;
         r.seconds = t0.elapsed().as_secs_f64();
-        r.error = err;
+        match outcome {
+            Ok((done, err)) => {
+                r.done = done;
+                r.error = err;
+            }
+            Err(p) => {
+                // r.done keeps the last flop index the loop published
+                let msg = format!("report crashed: {}", panic_msg(p.as_ref()));
+                eprintln!("report worker panicked: {}", panic_msg(p.as_ref()));
+                r.error = msg.clone();
+                drop(r); // no file IO under the status lock
+                mark_report_failed(&path, &msg);
+            }
+        }
     });
     Ok(Json(serde_json::json!({"ok": true})))
 }
@@ -1759,6 +1850,23 @@ fn write_report(
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
+/// Best-effort: stamp the partial report file of a crashed run with the
+/// failure, so the library shows WHY the study is incomplete. The worker
+/// claims the file before its first flop, so the file always belongs to the
+/// run that died; every failure here is swallowed (the report status already
+/// carries the error).
+fn mark_report_failed(path: &std::path::Path, error: &str) {
+    let Ok(text) = std::fs::read_to_string(path) else { return };
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&text) else { return };
+    v["complete"] = serde_json::Value::Bool(false);
+    v["error"] = serde_json::Value::String(error.to_string());
+    let Ok(out) = serde_json::to_string(&v) else { return };
+    let tmp = path.with_extension("json.tmp");
+    if std::fs::write(&tmp, out).is_ok() {
+        let _ = std::fs::rename(&tmp, path);
+    }
 }
 
 async fn report_status(State(state): State<Arc<AppState>>) -> Json<ReportStatus> {

@@ -34,16 +34,19 @@ pub fn parse_sizes(s: &str) -> Result<Vec<BetSize>, String> {
             let m: f64 = mult
                 .parse()
                 .map_err(|_| format!("invalid size token {tok:?}"))?;
-            if m <= 1.0 {
-                return Err(format!("raise multiple must be > 1: {tok:?}"));
+            // f64::from_str accepts "nan"/"inf", and NaN passes every `<=`
+            // comparison — admitted here it used to panic the amount sort
+            // during tree build, so reject anything non-finite by name.
+            if !m.is_finite() || m <= 1.0 {
+                return Err(format!("raise multiple must be a finite number > 1: {tok:?}"));
             }
             out.push(BetSize::PrevMult(m));
         } else {
             let p: f64 = tok
                 .parse()
                 .map_err(|_| format!("invalid size token {tok:?}"))?;
-            if p <= 0.0 {
-                return Err(format!("bet size must be positive: {tok:?}"));
+            if !p.is_finite() || p <= 0.0 {
+                return Err(format!("bet size must be a positive finite number: {tok:?}"));
             }
             out.push(BetSize::PotPct(p));
         }
@@ -291,10 +294,43 @@ impl<'a> TreeBuilder<'a> {
         if !(3..=5).contains(&board.len()) {
             return Err("board must have 3 to 5 cards".to_string());
         }
-        if config.starting_pot <= 0.0 || config.effective_stack <= 0.0 {
-            return Err("pot and stacks must be positive".to_string());
+        // `<= 0.0` alone lets NaN through (every comparison on NaN is
+        // false), and a non-finite pot/stack poisons every derived amount.
+        if !(config.starting_pot > 0.0 && config.starting_pot.is_finite())
+            || !(config.effective_stack > 0.0 && config.effective_stack.is_finite())
+        {
+            return Err("pot and stacks must be positive finite numbers".to_string());
         }
         let root_street = (board.len() - 3) as u8;
+        // Reject non-finite sizes (NaN/inf) in EVERY list regardless of
+        // strictness: they used to panic dedupe_amounts' sort mid-build, and
+        // no legacy save can carry one (such a config could never finish a
+        // build, so it could never have been saved). parse_sizes already
+        // rejects them; this guards sizes built without it.
+        for (player, streets) in [("OOP", &config.oop), ("IP", &config.ip)] {
+            for (street, sizing) in streets.iter().enumerate() {
+                for (field, list) in [
+                    ("bet", &sizing.bet),
+                    ("raise", &sizing.raise),
+                    ("donk", &sizing.donk),
+                ] {
+                    for size in list.iter() {
+                        let v = match size {
+                            BetSize::PotPct(p) => *p,
+                            BetSize::PrevMult(m) => *m,
+                            BetSize::AllIn => continue,
+                        };
+                        if !v.is_finite() {
+                            let street_name = ["flop", "turn", "river"][street];
+                            return Err(format!(
+                                "{street_name} {player} {field}: size {v} is not a \
+                                 finite number"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         // Reject raise-multiple sizes ("2.5x") in bet/donk lists up front:
         // with no prior bet to multiply they are meaningless there, and they
         // used to be dropped silently, solving a tree missing a size the
@@ -743,6 +779,9 @@ impl<'a> TreeBuilder<'a> {
 }
 
 fn dedupe_amounts(v: &mut Vec<f64>) {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // total_cmp: amounts are validated finite at build entry, but a NaN that
+    // ever slipped through must not panic the sort (defense in depth — this
+    // used to be partial_cmp().unwrap(), which panicked on NaN sizes).
+    v.sort_by(f64::total_cmp);
     v.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
 }
