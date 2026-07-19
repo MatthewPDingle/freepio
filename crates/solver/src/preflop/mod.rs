@@ -78,6 +78,28 @@ pub struct PreflopConfig {
     /// studies). Other seats' menus are unaffected.
     #[serde(default)]
     pub call_only_seats: Vec<usize>,
+    /// Per-seat size-menu overrides (len n when present; an empty inner list
+    /// means "use the global menu"). Lets one seat explore a wide sizing menu
+    /// while modeled opponents stay pinned to their observed sizes.
+    #[serde(default)]
+    pub open_raises_by_seat: Option<Vec<Vec<f64>>>,
+    #[serde(default)]
+    pub raise_mults_by_seat: Option<Vec<Vec<f64>>>,
+}
+
+impl PreflopConfig {
+    fn opens_of(&self, actor: usize) -> &[f64] {
+        match &self.open_raises_by_seat {
+            Some(per) if !per[actor].is_empty() => &per[actor],
+            _ => &self.open_raises,
+        }
+    }
+    fn mults_of(&self, actor: usize) -> &[f64] {
+        match &self.raise_mults_by_seat {
+            Some(per) if !per[actor].is_empty() => &per[actor],
+            _ => &self.raise_mults,
+        }
+    }
 }
 
 fn default_max_raises() -> u8 {
@@ -1942,6 +1964,31 @@ fn validate(cfg: &PreflopConfig) -> Result<usize, String> {
     if let Some(&s) = cfg.call_only_seats.iter().find(|&&s| s >= n) {
         return Err(format!("call_only_seats index {s} out of range for {n} seats"));
     }
+    for (name, per) in [
+        ("open_raises_by_seat", &cfg.open_raises_by_seat),
+        ("raise_mults_by_seat", &cfg.raise_mults_by_seat),
+    ] {
+        if let Some(per) = per {
+            if per.len() != n {
+                return Err(format!("{name} must have one entry per seat ({n})"));
+            }
+            for sizes in per {
+                if let Some(v) = sizes.iter().find(|v| !v.is_finite() || **v <= 0.0) {
+                    return Err(format!("{name} sizes must be finite and > 0, got {v}"));
+                }
+            }
+            if name == "open_raises_by_seat" {
+                for sizes in per {
+                    if let Some(v) = sizes.iter().find(|v| **v > cfg.stack) {
+                        return Err(format!(
+                            "{name} size {v} exceeds the {} bb stack (enable add_allin for jams)",
+                            cfg.stack
+                        ));
+                    }
+                }
+            }
+        }
+    }
     if cfg.call_only_seats.len() == n && !cfg.limp {
         return Err("all seats call-only with no limp leaves no way to enter a pot".into());
     }
@@ -2056,9 +2103,9 @@ fn legal_actions_of(cfg: &PreflopConfig, st: &BuildState, actor: usize) -> Vec<P
     if st.raises < cfg.max_raises && !cfg.call_only_seats.contains(&actor) {
         let mut tos: Vec<f64> = Vec::new();
         if st.raises == 0 {
-            tos.extend(cfg.open_raises.iter().cloned());
+            tos.extend(cfg.opens_of(actor).iter().cloned());
         } else {
-            for m in &cfg.raise_mults {
+            for m in cfg.mults_of(actor) {
                 let to = (st.to_call * m).max(st.to_call + st.last_raise);
                 tos.push(to);
             }

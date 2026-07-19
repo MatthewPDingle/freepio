@@ -27,6 +27,8 @@ fn hu_push_fold_config(stack: f64) -> PreflopConfig {
         no_flop_no_drop: true,
         realization: "raw".into(),
         call_only_seats: vec![],
+        open_raises_by_seat: None,
+        raise_mults_by_seat: None,
     }
 }
 
@@ -213,6 +215,8 @@ fn six_max_limp_tree_sanity() {
         no_flop_no_drop: true,
         realization: "static".into(),
         call_only_seats: vec![],
+        open_raises_by_seat: None,
+        raise_mults_by_seat: None,
     };
     let mut s = PreflopSolver::new(cfg, eq.clone()).unwrap();
     let action_nodes = s.nodes.iter().filter(|n| n.kind == 0).count();
@@ -316,6 +320,8 @@ fn hu_limp_config() -> PreflopConfig {
         no_flop_no_drop: true,
         realization: "static".into(),
         call_only_seats: vec![],
+        open_raises_by_seat: None,
+        raise_mults_by_seat: None,
     }
 }
 
@@ -664,6 +670,8 @@ fn unreached_bucket_falls_back_to_card_appeal() {
         no_flop_no_drop: true,
         realization: "raw".into(),
         call_only_seats: vec![],
+        open_raises_by_seat: None,
+        raise_mults_by_seat: None,
     };
     let mut s = PreflopSolver::new(cfg, eq).unwrap();
     for _ in 0..300 {
@@ -1365,6 +1373,8 @@ fn call_only_seat_never_raises() {
         no_flop_no_drop: true,
         realization: "raw".into(),
         call_only_seats: vec![0],
+        open_raises_by_seat: None,
+        raise_mults_by_seat: None,
     };
     let s = PreflopSolver::new(cfg.clone(), eq.clone()).unwrap();
     let (mut masked_nodes, mut others_raise) = (0, 0);
@@ -1391,4 +1401,64 @@ fn call_only_seat_never_raises() {
     bad.call_only_seats = vec![7];
     let err = match PreflopSolver::new(bad, eq) { Err(e) => e, Ok(_) => panic!("bad index accepted") };
     assert!(err.contains("call_only_seats"));
+}
+
+/// Per-seat size menus: the overridden seat sees its own sizes while every
+/// other seat keeps the global menu.
+#[test]
+fn per_seat_size_menus() {
+    let eq = table();
+    let mut cfg = PreflopConfig {
+        positions: vec!["BTN".into(), "SB".into(), "BB".into()],
+        stack: 100.0,
+        posts: vec![0.0, 0.5, 1.0],
+        ante: 0.0,
+        limp: true,
+        open_raises: vec![4.0],
+        raise_mults: vec![3.0],
+        max_raises: 3,
+        add_allin: false,
+        allin_threshold: 0.85,
+        rake_pct: 0.0,
+        rake_cap: 0.0,
+        no_flop_no_drop: true,
+        realization: "raw".into(),
+        call_only_seats: vec![],
+        open_raises_by_seat: None,
+        raise_mults_by_seat: None,
+    };
+    cfg.open_raises_by_seat = Some(vec![vec![2.5, 3.0, 5.0], vec![], vec![]]);
+    cfg.raise_mults_by_seat = Some(vec![vec![2.5, 4.0], vec![], vec![]]);
+    let s = PreflopSolver::new(cfg.clone(), eq.clone()).unwrap();
+    let mut seen_btn_opens: Vec<f64> = vec![];
+    let mut seen_other_opens: Vec<f64> = vec![];
+    for nd in &s.nodes {
+        if nd.kind != 0 {
+            continue;
+        }
+        for a in &nd.actions {
+            if a.kind == "raise" {
+                let owed_zero_open = a.label.starts_with("Raise");
+                if owed_zero_open {
+                    if nd.actor == 0 {
+                        seen_btn_opens.push(a.to);
+                    } else {
+                        seen_other_opens.push(a.to);
+                    }
+                }
+            }
+        }
+    }
+    seen_btn_opens.sort_by(f64::total_cmp);
+    seen_btn_opens.dedup();
+    seen_other_opens.sort_by(f64::total_cmp);
+    seen_other_opens.dedup();
+    assert_eq!(seen_btn_opens, vec![2.5, 3.0, 5.0], "override seat menu");
+    assert_eq!(seen_other_opens, vec![4.0], "global menu untouched");
+
+    // wrong length rejected
+    let mut bad = cfg;
+    bad.open_raises_by_seat = Some(vec![vec![2.5]]);
+    let err = match PreflopSolver::new(bad, eq) { Err(e) => e, Ok(_) => panic!("bad len accepted") };
+    assert!(err.contains("open_raises_by_seat"));
 }
